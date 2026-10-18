@@ -3069,16 +3069,6 @@ export default function ChatView(props: ChatViewProps) {
       terminalOpen: Boolean(terminalUiState.terminalOpen),
     },
   };
-  const splitTerminalShortcutLabel = shortcutLabelForCommand(
-    keybindings,
-    "terminal.split",
-    terminalShortcutLabelOptions,
-  );
-  const splitTerminalVerticalShortcutLabel = shortcutLabelForCommand(
-    keybindings,
-    "terminal.splitVertical",
-    terminalShortcutLabelOptions,
-  );
   const newTerminalShortcutLabel = shortcutLabelForCommand(
     keybindings,
     "terminal.new",
@@ -3776,10 +3766,6 @@ export default function ChatView(props: ChatViewProps) {
     void launched.result;
   };
   const splitPanelTerminalStable = useStableCallback(splitPanelTerminal);
-  const splitPanelTerminalVertical = () => {
-    splitPanelTerminal("vertical");
-  };
-  const splitPanelTerminalVerticalStable = useStableCallback(splitPanelTerminalVertical);
   const activatePanelTerminal = (terminalId: string) => {
     if (!activeThreadRef || activeRightPanelSurface?.kind !== "terminal") return;
     useRightPanelStore
@@ -7709,13 +7695,9 @@ export default function ChatView(props: ChatViewProps) {
         focusRequestId: terminalFocusRequestId,
         keybindings,
         onAddTerminalContext: addTerminalContextToDraftStable,
-        onSplitTerminal: splitPanelTerminalStable,
-        onSplitTerminalVertical: splitPanelTerminalVerticalStable,
         onNewTerminal: addTerminalSurfaceStable,
         onActiveTerminalChange: activatePanelTerminalStable,
         onCloseTerminal: closePanelTerminalStable,
-        splitShortcutLabel: splitTerminalShortcutLabel ?? undefined,
-        splitVerticalShortcutLabel: splitTerminalVerticalShortcutLabel ?? undefined,
         newShortcutLabel: newTerminalShortcutLabel ?? undefined,
         closeShortcutLabel: closeTerminalShortcutLabel ?? undefined,
       }}
@@ -8484,8 +8466,6 @@ export default function ChatView(props: ChatViewProps) {
               mountedThreadKey === activeThreadKey ? (activeTerminalLaunchContext ?? null) : null
             }
             focusRequestId={mountedThreadKey === activeThreadKey ? terminalFocusRequestId : 0}
-            splitShortcutLabel={splitTerminalShortcutLabel ?? undefined}
-            splitVerticalShortcutLabel={splitTerminalVerticalShortcutLabel ?? undefined}
             newShortcutLabel={newTerminalShortcutLabel ?? undefined}
             closeShortcutLabel={closeTerminalShortcutLabel ?? undefined}
             keybindings={keybindings}

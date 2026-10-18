@@ -11,6 +11,8 @@ import {
   type TerminalSessionState,
 } from "@t3tools/client-runtime/state/terminal";
 import {
+  ChevronDown,
+  ChevronUp,
   Plus,
   Square,
   SquareSplitHorizontal,
@@ -70,11 +72,7 @@ import {
   terminalDeleteShortcutData,
   terminalNavigationShortcutData,
 } from "../keybindings";
-import {
-  DEFAULT_THREAD_TERMINAL_HEIGHT,
-  MAX_TERMINALS_PER_GROUP,
-  type ThreadTerminalGroup,
-} from "../types";
+import { DEFAULT_THREAD_TERMINAL_HEIGHT, type ThreadTerminalGroup } from "../types";
 import { readLocalApi } from "~/localApi";
 import { confirmTerminalClose } from "~/lib/terminalCloseConfirm";
 import { useClientSettings } from "../hooks/useSettings";
@@ -95,6 +93,7 @@ import {
 } from "../appearanceFonts";
 
 const MIN_DRAWER_HEIGHT = 180;
+const COLLAPSED_DRAWER_HEIGHT = 28;
 const MAX_DRAWER_HEIGHT_RATIO = 0.75;
 
 function maxDrawerHeight(): number {
@@ -1128,11 +1127,7 @@ interface ThreadTerminalDrawerProps {
   terminalGroups: ThreadTerminalGroup[];
   activeTerminalGroupId: string;
   focusRequestId: number;
-  onSplitTerminal: () => void;
-  onSplitTerminalVertical: () => void;
   onNewTerminal: () => void;
-  splitShortcutLabel?: string | undefined;
-  splitVerticalShortcutLabel?: string | undefined;
   newShortcutLabel?: string | undefined;
   closeShortcutLabel?: string | undefined;
   onActiveTerminalChange: (terminalId: string) => void;
@@ -1394,11 +1389,7 @@ export default function ThreadTerminalDrawer({
   terminalGroups,
   activeTerminalGroupId,
   focusRequestId,
-  onSplitTerminal,
-  onSplitTerminalVertical,
   onNewTerminal,
-  splitShortcutLabel,
-  splitVerticalShortcutLabel,
   newShortcutLabel,
   closeShortcutLabel,
   onActiveTerminalChange,
@@ -1435,6 +1426,9 @@ export default function ThreadTerminalDrawer({
     });
   };
   const [resizeEpoch, setResizeEpoch] = useState(0);
+  // Collapsing keeps the sessions mounted and leaves a slim header, like the VS Code panel.
+  const [collapsed, setCollapsed] = useState(false);
+  const isCollapsed = !isPanel && collapsed;
   const [shownVisible, setShownVisible] = useState(visible);
   if (shownVisible !== visible) {
     setShownVisible(visible);
@@ -1575,37 +1569,18 @@ export default function ThreadTerminalDrawer({
   const showGroupHeaders =
     resolvedTerminalGroups.length > 1 ||
     resolvedTerminalGroups.some((terminalGroup) => terminalGroup.terminalIds.length > 1);
-  const hasReachedSplitLimit = visibleTerminalIds.length >= MAX_TERMINALS_PER_GROUP;
   const resolveTerminalLaunchLocation = (terminalId: string): TerminalLaunchLocation =>
     terminalLaunchLocationsById?.get(terminalId) ?? {
       cwd,
       ...(worktreePath !== undefined ? { worktreePath } : {}),
       ...(runtimeEnv ? { runtimeEnv } : {}),
     };
-  const splitTerminalActionLabel = hasReachedSplitLimit
-    ? `Split Terminal Horizontally (max ${MAX_TERMINALS_PER_GROUP} per group)`
-    : splitShortcutLabel
-      ? `Split Terminal Horizontally (${splitShortcutLabel})`
-      : "Split Terminal Horizontally";
-  const splitTerminalVerticalActionLabel = hasReachedSplitLimit
-    ? `Split Terminal Vertically (max ${MAX_TERMINALS_PER_GROUP} per group)`
-    : splitVerticalShortcutLabel
-      ? `Split Terminal Vertically (${splitVerticalShortcutLabel})`
-      : "Split Terminal Vertically";
   const newTerminalActionLabel = newShortcutLabel
     ? `New Terminal (${newShortcutLabel})`
     : "New Terminal";
   const closeTerminalActionLabel = closeShortcutLabel
     ? `Close Terminal (${closeShortcutLabel})`
     : "Close Terminal";
-  const onSplitTerminalAction = () => {
-    if (!canOperateTerminal || hasReachedSplitLimit) return;
-    onSplitTerminal();
-  };
-  const onSplitTerminalVerticalAction = () => {
-    if (!canOperateTerminal || hasReachedSplitLimit) return;
-    onSplitTerminalVertical();
-  };
   const onNewTerminalAction = () => {
     if (!canOperateTerminal) return;
     onNewTerminal();
@@ -1760,9 +1735,13 @@ export default function ThreadTerminalDrawer({
         "relative flex min-w-0 flex-col overflow-hidden bg-background",
         isPanel ? "h-full flex-1" : "shrink-0 border-t border-border/80",
       )}
-      style={isPanel ? undefined : { height: `${drawerHeight}px` }}
+      style={
+        isPanel
+          ? undefined
+          : { height: `${isCollapsed ? COLLAPSED_DRAWER_HEIGHT : drawerHeight}px` }
+      }
     >
-      {!isPanel ? (
+      {!isPanel && !isCollapsed ? (
         <div
           className="absolute inset-x-0 top-0 z-20 h-1.5 cursor-row-resize"
           onPointerDown={handleResizePointerDown}
@@ -1773,35 +1752,25 @@ export default function ThreadTerminalDrawer({
         />
       ) : null}
 
-      {!hasTerminalSidebar && (
+      {isCollapsed ? (
+        <button
+          type="button"
+          className="flex h-full w-full items-center gap-2 px-3 text-left text-xs text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
+          onClick={() => setCollapsed(false)}
+          aria-label="Expand Terminal"
+          aria-expanded={false}
+        >
+          <TerminalSquare className="size-3.25 shrink-0" />
+          <span className="min-w-0 flex-1 truncate">
+            {terminalLabelById.get(resolvedActiveTerminalId) ?? "Terminal"}
+          </span>
+          <ChevronUp className="size-3.5 shrink-0" />
+        </button>
+      ) : null}
+
+      {!hasTerminalSidebar && !isCollapsed && (
         <div className="pointer-events-none absolute right-2 top-2 z-20">
           <div className="pointer-events-auto inline-flex items-center overflow-hidden rounded-md border border-border/80 bg-background shadow-xs">
-            <TerminalActionButton
-              disabled={!canOperateTerminal}
-              className={`p-1 text-foreground/90 transition-colors ${
-                hasReachedSplitLimit
-                  ? "cursor-not-allowed opacity-64 hover:bg-transparent"
-                  : "hover:bg-accent"
-              }`}
-              onClick={onSplitTerminalAction}
-              label={splitTerminalActionLabel}
-            >
-              <SquareSplitHorizontal className="size-3.25" />
-            </TerminalActionButton>
-            <div className="h-4 w-px bg-border/80" />
-            <TerminalActionButton
-              disabled={!canOperateTerminal}
-              className={`p-1 text-foreground/90 transition-colors ${
-                hasReachedSplitLimit
-                  ? "cursor-not-allowed opacity-64 hover:bg-transparent"
-                  : "hover:bg-accent"
-              }`}
-              onClick={onSplitTerminalVerticalAction}
-              label={splitTerminalVerticalActionLabel}
-            >
-              <SquareSplitVertical className="size-3.25" />
-            </TerminalActionButton>
-            <div className="h-4 w-px bg-border/80" />
             <TerminalActionButton
               disabled={!canOperateTerminal}
               className="p-1 text-foreground/90 transition-colors hover:bg-accent"
@@ -1819,11 +1788,23 @@ export default function ThreadTerminalDrawer({
             >
               <Trash2 className="size-3.25" />
             </TerminalActionButton>
+            {!isPanel ? (
+              <>
+                <div className="h-4 w-px bg-border/80" />
+                <TerminalActionButton
+                  className="p-1 text-foreground/90 transition-colors hover:bg-accent"
+                  onClick={() => setCollapsed(true)}
+                  label="Collapse Terminal"
+                >
+                  <ChevronDown className="size-3.25" />
+                </TerminalActionButton>
+              </>
+            ) : null}
           </div>
         </div>
       )}
 
-      <div className="min-h-0 w-full flex-1">
+      <div className={cn("min-h-0 w-full flex-1", isCollapsed && "hidden")}>
         <div
           className={cn(
             "flex h-full min-h-0 bg-(--terminal-background)",
@@ -1845,7 +1826,7 @@ export default function ThreadTerminalDrawer({
                 threadId={threadId}
                 onAddTerminalContext={onAddTerminalContext}
                 focusRequestId={focusRequestId}
-                visible={visible}
+                visible={visible && !isCollapsed}
                 resizeEpoch={resizeEpoch}
                 drawerHeight={drawerHeight}
                 keybindings={keybindings}
@@ -1870,7 +1851,7 @@ export default function ThreadTerminalDrawer({
                   onAddTerminalContext={onAddTerminalContext}
                   focusRequestId={focusRequestId}
                   autoFocus
-                  visible={visible}
+                  visible={visible && !isCollapsed}
                   resizeEpoch={resizeEpoch}
                   drawerHeight={drawerHeight}
                   keybindings={keybindings}
@@ -1883,30 +1864,6 @@ export default function ThreadTerminalDrawer({
             <aside className="flex w-36 min-w-36 flex-col border border-border/70 bg-muted/10">
               <div className="flex h-[22px] items-stretch justify-end border-b border-border/70">
                 <div className="inline-flex h-full items-stretch">
-                  <TerminalActionButton
-                    disabled={!canOperateTerminal}
-                    className={`inline-flex h-full items-center px-1 text-foreground/90 transition-colors ${
-                      hasReachedSplitLimit
-                        ? "cursor-not-allowed opacity-64 hover:bg-transparent"
-                        : "hover:bg-accent/70"
-                    }`}
-                    onClick={onSplitTerminalAction}
-                    label={splitTerminalActionLabel}
-                  >
-                    <SquareSplitHorizontal className="size-3.25" />
-                  </TerminalActionButton>
-                  <TerminalActionButton
-                    disabled={!canOperateTerminal}
-                    className={`inline-flex h-full items-center border-l border-border/70 px-1 text-foreground/90 transition-colors ${
-                      hasReachedSplitLimit
-                        ? "cursor-not-allowed opacity-64 hover:bg-transparent"
-                        : "hover:bg-accent/70"
-                    }`}
-                    onClick={onSplitTerminalVerticalAction}
-                    label={splitTerminalVerticalActionLabel}
-                  >
-                    <SquareSplitVertical className="size-3.25" />
-                  </TerminalActionButton>
                   <TerminalActionButton
                     disabled={!canOperateTerminal}
                     className="inline-flex h-full items-center border-l border-border/70 px-1 text-foreground/90 transition-colors hover:bg-accent/70"
@@ -1923,6 +1880,15 @@ export default function ThreadTerminalDrawer({
                   >
                     <Trash2 className="size-3.25" />
                   </TerminalActionButton>
+                  {!isPanel ? (
+                    <TerminalActionButton
+                      className="inline-flex h-full items-center border-l border-border/70 px-1 text-foreground/90 transition-colors hover:bg-accent/70"
+                      onClick={() => setCollapsed(true)}
+                      label="Collapse Terminal"
+                    >
+                      <ChevronDown className="size-3.25" />
+                    </TerminalActionButton>
+                  ) : null}
                 </div>
               </div>
 
