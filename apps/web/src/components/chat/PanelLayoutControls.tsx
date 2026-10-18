@@ -88,6 +88,7 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
                   ? `Toggle right panel, ${liveAgentCount} ${liveAgentCount === 1 ? "agent" : "agents"} working`
                   : "Toggle right panel"
               }
+              data-right-panel-toggle
               variant="ghost"
               size="sm"
               disabled={!rightPanelAvailable}
