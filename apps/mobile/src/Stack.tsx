@@ -18,6 +18,7 @@ import {
   createNativeStackScreen,
   type NativeStackNavigationOptions,
 } from "@react-navigation/native-stack";
+import { APP_BASE_NAME } from "@t3tools/contracts";
 import { useEffect, useRef, type ReactNode } from "react";
 import {
   Platform,
@@ -269,7 +270,7 @@ const SettingsContentStack = createV5SheetStackNavigator({
     SettingsAbout: createNativeStackScreen({
       screen: SettingsAboutRouteScreen,
       linking: "about",
-      options: { title: "About T3 Code" },
+      options: { title: `About ${APP_BASE_NAME}` },
     }),
     SettingsEnvironmentNew: createNativeStackScreen({
       screen: ConnectionsNewRouteScreen,

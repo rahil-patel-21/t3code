@@ -7,6 +7,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as PlatformError from "effect/PlatformError";
 
+import branding from "../packages/contracts/src/branding.json" with { type: "json" };
 import {
   readDesktopBaseVersion,
   resolveNightlyBaseVersion,
@@ -46,7 +47,7 @@ it("derives nightly metadata including the short commit sha in the release name"
       baseVersion: "9.9.10",
       version: "9.9.10-nightly.20260413.321",
       tag: "v9.9.10-nightly.20260413.321",
-      name: "T3 Code Nightly 9.9.10-nightly.20260413.321 (abcdef123456)",
+      name: `${branding.name} Nightly 9.9.10-nightly.20260413.321 (abcdef123456)`,
       shortSha: "abcdef123456",
     },
   );
@@ -59,7 +60,7 @@ it("derives preview metadata under its own prerelease identifier", () => {
       baseVersion: "9.9.10",
       version: "9.9.10-preview.20260413.321",
       tag: "v9.9.10-preview.20260413.321",
-      name: "T3 Code Preview (maintainer test build, do not install) 9.9.10-preview.20260413.321 (abcdef123456)",
+      name: `${branding.name} Preview (maintainer test build, do not install) 9.9.10-preview.20260413.321 (abcdef123456)`,
       shortSha: "abcdef123456",
     },
   );

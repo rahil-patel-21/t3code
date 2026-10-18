@@ -67,6 +67,11 @@ const REVIEW_DIFF_FILE_MAX_OUTPUT_BYTES = 1024 * 1024;
 // prefixes. A repository or global diff.noprefix or diff.mnemonicPrefix would
 // otherwise leak into the patch and leave every parsed file unnamed.
 export const PATCH_RENDER_PREFIX_ARGS = ["--src-prefix=a/", "--dst-prefix=b/"] as const;
+// `-uall` trades a directory row for one row per untracked file, so a tree with a very large
+// unignored directory can outgrow the shared 1 MB cap and fail the whole status. Bound it well
+// above any realistic working tree and truncate instead, so an extreme repo still reports the
+// files that fit rather than losing the panel.
+const WORKING_TREE_STATUS_MAX_OUTPUT_BYTES = 16 * 1024 * 1024;
 const REVIEW_DIFF_ARGS = [
   "diff",
   "--find-renames",
@@ -1862,10 +1867,16 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     options?: GitVcsDriver.GitLocalStatusOptions,
   ) {
     const includeDivergence = options?.includeDivergence !== false;
+    // `-uall` lists every untracked file on its own. Plain `git status` collapses an untracked
+    // directory into a single `dir/` entry, so a freshly added folder would show as one change
+    // instead of the files it holds, and per-file diffs for them would be unreachable. The
+    // review diff already enumerates untracked files individually via `ls-files --others`, so
+    // this keeps the working tree list and the diff panel describing the same set of files.
     const statusArgs = [
       "status",
       "--porcelain=2",
       "--branch",
+      "-uall",
       ...(includeDivergence ? [] : ["--no-ahead-behind"]),
     ];
     const indexResult = yield* executeGitWithStableDiagnostics(
@@ -1910,6 +1921,8 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       statusArgs,
       {
         allowNonZeroExit: true,
+        maxOutputBytes: WORKING_TREE_STATUS_MAX_OUTPUT_BYTES,
+        appendTruncationMarker: true,
       },
     ).pipe(
       Effect.catchTags({
@@ -2020,8 +2033,13 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     let aheadOfDefaultCount = 0;
     let hasWorkingTreeChanges = false;
     const changedFilesWithoutNumstat = new Set<string>();
+    const untrackedPaths = new Set<string>();
 
-    for (const line of statusStdout.split(/\r?\n/g)) {
+    const statusLines = statusStdout.split(/\r?\n/g);
+    // A capped read can stop mid-line, and half a path would list as a file that does not exist.
+    if (statusResult.stdoutTruncated && statusLines.length > 0) statusLines.pop();
+
+    for (const line of statusLines) {
       if (line.startsWith("# branch.head ")) {
         const value = line.slice("# branch.head ".length).trim();
         refName = value.startsWith("(") ? null : value;
@@ -2043,6 +2061,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         hasWorkingTreeChanges = true;
         const pathValue = parsePorcelainPath(line);
         if (pathValue) changedFilesWithoutNumstat.add(pathValue);
+        if (pathValue && line.startsWith("? ")) untrackedPaths.add(pathValue);
       }
     }
 
@@ -2085,7 +2104,12 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
 
     for (const filePath of changedFilesWithoutNumstat) {
       if (fileStatMap.has(filePath)) continue;
-      files.push({ path: filePath, insertions: 0, deletions: 0 });
+      files.push({
+        path: filePath,
+        insertions: 0,
+        deletions: 0,
+        ...(untrackedPaths.has(filePath) ? { untracked: true as const } : {}),
+      });
     }
     files.sort((a, b) => a.path.localeCompare(b.path));
 

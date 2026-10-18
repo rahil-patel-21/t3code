@@ -275,10 +275,6 @@ export function workEntryIsVisibleInGroup(
     !workEntryIndicatesToolNeutralStatus(entry)
   );
 }
-const TIMELINE_MINIMAP_ITEM_SPACING = 8;
-export const TIMELINE_MINIMAP_MIN_ITEMS = 2;
-const TIMELINE_MINIMAP_MAX_HEIGHT_CSS = "calc(100vh - 18rem)";
-const TIMELINE_MINIMAP_PERSISTENT_GUTTER = 48;
 
 export interface WorkGroupScrollAnchor {
   readonly entryId: string;
@@ -339,107 +335,23 @@ export function resolveTimelineIsAtEnd(state: TimelineEndState | undefined): boo
   return contentLength - scroll - scrollLength <= TIMELINE_FOLLOW_REARM_THRESHOLD_PX;
 }
 
-export function resolveTimelineMinimapHeightStyle(itemCount: number): string {
-  const naturalHeight = Math.max(1, (itemCount - 1) * TIMELINE_MINIMAP_ITEM_SPACING);
-  return `min(${naturalHeight}px, ${TIMELINE_MINIMAP_MAX_HEIGHT_CSS})`;
-}
+const MAX_COLLAPSED_ASSISTANT_MESSAGE_LINES = 10;
+const MAX_COLLAPSED_ASSISTANT_MESSAGE_LENGTH = 1200;
 
-export function resolveTimelineMinimapTopPercent(index: number, itemCount: number): number {
-  if (itemCount <= 1) {
-    return 0;
-  }
-  return (Math.max(0, Math.min(index, itemCount - 1)) / (itemCount - 1)) * 100;
-}
-
-export function resolveTimelineMinimapIndexFromPointer(input: {
-  readonly itemCount: number;
-  readonly railTop: number;
-  readonly railHeight: number;
-  readonly pointerY: number;
-}): number | null {
-  if (input.itemCount <= 0 || input.railHeight <= 0) {
-    return null;
-  }
-  if (input.itemCount === 1) {
-    return 0;
-  }
-
-  const progress = Math.max(0, Math.min(1, (input.pointerY - input.railTop) / input.railHeight));
-  return Math.max(0, Math.min(input.itemCount - 1, Math.round(progress * (input.itemCount - 1))));
-}
-
-export function resolveTimelineMinimapCurrentIndex(input: {
-  readonly scrollTop: number;
-  readonly scrollBottom: number;
-  readonly itemBounds: ReadonlyArray<{
-    readonly top: number | null;
-    readonly height: number | null;
-  }>;
-}): number | null {
-  let precedingIndex: number | null = null;
-
-  for (const [index, item] of input.itemBounds.entries()) {
-    if (item.top === null) {
-      continue;
-    }
-    const inView =
-      item.top < input.scrollBottom && item.top + Math.max(1, item.height ?? 1) > input.scrollTop;
-    if (inView) {
-      return index;
-    }
-    if (item.top <= input.scrollTop) {
-      precedingIndex = index;
-    }
-  }
-
-  return precedingIndex;
-}
-
-function resolveTimelineSideGutter(viewportWidth: number, contentWidth: number): number {
-  if (!Number.isFinite(viewportWidth) || viewportWidth <= 0 || !Number.isFinite(contentWidth)) {
-    return 0;
-  }
-  return Math.max(0, (viewportWidth - Math.min(viewportWidth, contentWidth)) / 2);
-}
-
-export function resolveTimelineMinimapHasPersistentGutter(
-  viewportWidth: number,
-  contentWidth: number,
-): boolean {
+/**
+ * Whether a finished response renders past the ten lines it opens clamped to.
+ *
+ * ponytail: estimated from the source text; measure the rendered height if
+ * responses that are tall but short in source (tables, images) need clamping.
+ */
+export function shouldCollapseAssistantMessage(text: string): boolean {
+  // Link targets render as short file chips, so only their labels count.
+  const visibleText = text.replace(/\]\([^)]*\)/g, "]");
   return (
-    resolveTimelineSideGutter(viewportWidth, contentWidth) >= TIMELINE_MINIMAP_PERSISTENT_GUTTER
+    visibleText.length > MAX_COLLAPSED_ASSISTANT_MESSAGE_LENGTH ||
+    visibleText.split("\n").filter((line) => line.trim().length > 0).length >
+      MAX_COLLAPSED_ASSISTANT_MESSAGE_LINES
   );
-}
-
-const TIMELINE_MINIMAP_HIT_STRIP_LEFT = 12;
-const TIMELINE_MINIMAP_HIT_STRIP_MAX_WIDTH = 40;
-const TIMELINE_MINIMAP_EXPANDED_HIT_STRIP_WIDTH = "22rem";
-
-export function resolveTimelineMinimapHitStripWidth(
-  viewportWidth: number,
-  contentWidth: number,
-): number {
-  const sideGutter = resolveTimelineSideGutter(viewportWidth, contentWidth);
-  return Math.max(
-    0,
-    Math.min(
-      TIMELINE_MINIMAP_HIT_STRIP_MAX_WIDTH,
-      Math.floor(sideGutter) - TIMELINE_MINIMAP_HIT_STRIP_LEFT,
-    ),
-  );
-}
-
-const TIMELINE_MINIMAP_NAVIGATION_REACH = 14;
-
-export function resolveTimelineMinimapNavigationInteractive(collapsedWidth: number): boolean {
-  return collapsedWidth >= TIMELINE_MINIMAP_NAVIGATION_REACH;
-}
-
-export function resolveTimelineMinimapInteractiveWidth(
-  collapsedWidth: number,
-  expanded: boolean,
-): number | string {
-  return expanded ? TIMELINE_MINIMAP_EXPANDED_HIT_STRIP_WIDTH : collapsedWidth;
 }
 
 function computeElapsedMs(startIso: string, endIso: string): number | null {

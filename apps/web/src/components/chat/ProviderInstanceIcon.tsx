@@ -3,7 +3,18 @@ import { type CSSProperties, memo } from "react";
 import { providerInstanceInitials } from "@t3tools/client-runtime/state/provider-instance-display";
 
 import { ProviderDriverKind } from "@t3tools/contracts";
-import { AntigravityIcon, ClaudeAI, Icon, OpenAI } from "../Icons";
+import {
+  AntigravityIcon,
+  ClaudeAI,
+  CursorIcon,
+  GrokIcon,
+  MuseIcon,
+  Icon,
+  MiniMaxCodeIcon,
+  OpenAI,
+  OpenCodeIcon,
+  PiAgentIcon,
+} from "../Icons";
 
 import { cn } from "~/lib/utils";
 import { providerClients } from "../settings/providerDriverMeta";
@@ -17,6 +28,12 @@ import {
 const PROVIDER_ICON_BY_PROVIDER: Partial<Record<ProviderDriverKind, Icon>> = {
   [ProviderDriverKind.make("codex")]: OpenAI,
   [ProviderDriverKind.make("claudeAgent")]: ClaudeAI,
+  [ProviderDriverKind.make("opencode")]: OpenCodeIcon,
+  [ProviderDriverKind.make("pi")]: PiAgentIcon,
+  [ProviderDriverKind.make("cursor")]: CursorIcon,
+  [ProviderDriverKind.make("grok")]: GrokIcon,
+  [ProviderDriverKind.make("minimaxCode")]: MiniMaxCodeIcon,
+  [ProviderDriverKind.make("muse")]: MuseIcon,
   [ProviderDriverKind.make("antigravity")]: AntigravityIcon,
 };
 

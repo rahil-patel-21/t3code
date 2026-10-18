@@ -1,4 +1,5 @@
 import { assert, describe, it } from "@effect/vitest";
+import { APP_BASE_NAME } from "@t3tools/contracts";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -251,7 +252,7 @@ describe("OtelEnvironment", () => {
         metrics: "https://collector:4318/v1/metrics",
         logs: "https://collector:4318/v1/logs",
         warnings: [
-          "OTEL_METRICS_EXPORTER names prometheus, which T3 Code does not export to, so it was ignored",
+          `OTEL_METRICS_EXPORTER names prometheus, which ${APP_BASE_NAME} does not export to, so it was ignored`,
         ],
       },
       {
@@ -265,8 +266,8 @@ describe("OtelEnvironment", () => {
         metrics: "https://collector:4318/v1/metrics",
         logs: "https://collector:4318/v1/logs",
         warnings: [
-          "OTEL_TRACES_EXPORTER names console, which T3 Code does not export to, so it was ignored",
-          "OTEL_LOGS_EXPORTER names console, otlpp, which T3 Code does not export to, so they were ignored",
+          `OTEL_TRACES_EXPORTER names console, which ${APP_BASE_NAME} does not export to, so it was ignored`,
+          `OTEL_LOGS_EXPORTER names console, otlpp, which ${APP_BASE_NAME} does not export to, so they were ignored`,
         ],
       },
     ])("$name", ({ env, traces, metrics, logs, warnings }) =>

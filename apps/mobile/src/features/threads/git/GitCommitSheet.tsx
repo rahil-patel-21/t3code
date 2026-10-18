@@ -174,11 +174,13 @@ export function GitCommitSheet(_props: GitCommitSheetProps) {
                       {file.path}
                     </Text>
                     <Text className="text-xs font-t3-bold text-adaptive-emerald-700-300">
-                      +{formatDiffCount(file.insertions)}
+                      {file.untracked ? "New" : `+${formatDiffCount(file.insertions)}`}
                     </Text>
-                    <Text className="text-xs font-t3-bold text-adaptive-rose-700-300">
-                      -{formatDiffCount(file.deletions)}
-                    </Text>
+                    {file.untracked ? null : (
+                      <Text className="text-xs font-t3-bold text-adaptive-rose-700-300">
+                        -{formatDiffCount(file.deletions)}
+                      </Text>
+                    )}
                   </View>
                 ))}
                 {selectedFiles.length > selectedFilePreview.length ? (
@@ -253,11 +255,13 @@ export function GitCommitSheet(_props: GitCommitSheetProps) {
                         </View>
                         <View className="items-end gap-1">
                           <Text className="text-xs font-t3-bold text-adaptive-emerald-700-300">
-                            +{formatDiffCount(file.insertions)}
+                            {file.untracked ? "New" : `+${formatDiffCount(file.insertions)}`}
                           </Text>
-                          <Text className="text-xs font-t3-bold text-adaptive-rose-700-300">
-                            -{formatDiffCount(file.deletions)}
-                          </Text>
+                          {file.untracked ? null : (
+                            <Text className="text-xs font-t3-bold text-adaptive-rose-700-300">
+                              -{formatDiffCount(file.deletions)}
+                            </Text>
+                          )}
                         </View>
                       </View>
                     </Pressable>

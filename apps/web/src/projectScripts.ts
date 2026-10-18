@@ -16,6 +16,10 @@ export interface ProjectScriptInput {
   readonly runOnSettle: boolean;
   readonly previewUrl: Exclude<ProjectScript["previewUrl"], undefined> | null;
   readonly autoOpenPreview: boolean;
+  /** Omit for the in-app preview. */
+  readonly previewTarget?: "app" | "browser";
+  /** Omit to run the script in a terminal the user watches. */
+  readonly runInBackground?: boolean;
 }
 
 export function buildProjectScript(id: string, input: ProjectScriptInput): ProjectScript {
@@ -27,11 +31,13 @@ export function buildProjectScript(id: string, input: ProjectScriptInput): Proje
     runOnWorktreeCreate: input.runOnWorktreeCreate,
     ...(input.runOnWorktreeCreate && input.waitForSetup ? { async: false } : {}),
     ...(input.runOnSettle ? { runOnSettle: true } : {}),
+    ...(input.runInBackground ? { runInBackground: true } : {}),
     ...(input.previewUrl === null
       ? {}
       : {
           previewUrl: input.previewUrl,
           autoOpenPreview: input.autoOpenPreview,
+          ...(input.previewTarget === "browser" ? { previewTarget: "browser" as const } : {}),
         }),
   };
 }

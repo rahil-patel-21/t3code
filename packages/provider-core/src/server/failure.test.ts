@@ -19,7 +19,11 @@ import {
   ContextHandoffBudgetError,
 } from "./failure.ts";
 import * as IdAllocator from "./IdAllocator.ts";
-import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
+import {
+  ProviderAdapterProtocolError,
+  ProviderAdapterTurnStartError,
+  ProviderCommandUnsupportedError,
+} from "./ProviderAdapter.ts";
 
 it("redacts credentials and URL secrets from provider failures", () => {
   const failure = makeProviderFailure({
@@ -88,7 +92,7 @@ it("does not expose arbitrary cause messages and preserves explicit messages", (
 });
 
 it("preserves actionable handoff errors wrapped by turn startup", () => {
-  const cause = new ProviderAdapter.ProviderAdapterTurnStartError({
+  const cause = new ProviderAdapterTurnStartError({
     driver: ProviderDriverKind.make("codex"),
     threadId: ThreadId.make("thread:handoff-error"),
     providerThreadId: ProviderThreadId.make("provider-thread:handoff-error"),
@@ -99,6 +103,53 @@ it("preserves actionable handoff errors wrapped by turn startup", () => {
     makeProviderFailure({ cause: Cause.fail(cause) }).message,
     new ContextHandoffBudgetError().message,
   );
+});
+
+it("names the rejected input instead of advising a retry that cannot work", () => {
+  const detail =
+    "minimaxCode does not accept image attachments, so the turn was not sent. Remove the image and attach the file as text instead";
+  const cause = new ProviderAdapterTurnStartError({
+    driver: ProviderDriverKind.make("minimaxCode"),
+    threadId: ThreadId.make("thread:image-rejected"),
+    providerThreadId: ProviderThreadId.make("provider-thread:image-rejected"),
+    runId: RunId.make("run:image-rejected"),
+    cause: new ProviderAdapterProtocolError({
+      driver: ProviderDriverKind.make("minimaxCode"),
+      detail,
+    }),
+  });
+  const message = makeProviderFailure({ cause: Cause.fail(cause) }).message;
+  assert.equal(message, detail);
+  assert.notInclude(message, "Retry the turn");
+});
+
+it("keeps the generic retry advice when turn startup fails without a stated reason", () => {
+  const cause = new ProviderAdapterTurnStartError({
+    driver: ProviderDriverKind.make("codex"),
+    threadId: ThreadId.make("thread:plain-start-error"),
+    providerThreadId: ProviderThreadId.make("provider-thread:plain-start-error"),
+    runId: RunId.make("run:plain-start-error"),
+  });
+  assert.include(
+    makeProviderFailure({ cause: Cause.fail(cause) }).message,
+    "provider could not start this turn",
+  );
+});
+
+it("names an unsupported command instead of advising a retry that cannot work", () => {
+  const cause = new ProviderAdapterTurnStartError({
+    driver: ProviderDriverKind.make("minimaxCode"),
+    threadId: ThreadId.make("thread:compact-unsupported"),
+    providerThreadId: ProviderThreadId.make("provider-thread:compact-unsupported"),
+    runId: RunId.make("run:compact-unsupported"),
+    cause: new ProviderCommandUnsupportedError({
+      driver: ProviderDriverKind.make("minimaxCode"),
+      command: "conversation compaction (/compact)",
+    }),
+  });
+  const message = makeProviderFailure({ cause: Cause.fail(cause) }).message;
+  assert.equal(message, "minimaxCode does not support conversation compaction (/compact).");
+  assert.notInclude(message, "Retry the turn");
 });
 
 it("does not expose defect text nested inside a known error category", () => {
@@ -166,6 +217,59 @@ it("does not serialize arbitrary provider causes", () => {
     code: null,
     retryable: null,
   });
+});
+
+it("reduces a gateway HTML error page to readable lines", () => {
+  const failure = makeProviderFailure({
+    message:
+      "Internal error: MiniMax Code Runtime failed: 503 <HTML><HEAD><TITLE>Internal Server Error</TITLE></HEAD><BODY><H1>Internal Server Error - Write</H1><P>The server encountered an internal error or misconfiguration and was unable to complete your request.<P>Reference&#32;&#35;&#46;865f3a17&#46;1791461588&#46;5542f301<P>https&#58;&#47;&#47;errors&#46;edgesuite&#46;net&#47;4&#46;865f3a17&#46;1791461588&#46;5542f301</BODY></HTML>",
+  });
+
+  assert.equal(
+    failure.message,
+    [
+      "Internal error: MiniMax Code Runtime failed: 503",
+      "Internal Server Error",
+      "Internal Server Error - Write",
+      "The server encountered an internal error or misconfiguration and was unable to complete your request.",
+      "Reference #.865f3a17.1791461588.5542f301",
+      "https://errors.edgesuite.net/4.865f3a17.1791461588.5542f301",
+    ].join("\n"),
+  );
+});
+
+it("keeps inline markup inline and drops script and style bodies", () => {
+  const failure = makeProviderFailure({
+    message:
+      'Turn failed: <b>Bad</b> request (<i>code</i> 400) <script>alert("xss")</script><style>.a{color:red}</style>Retry the turn.',
+  });
+
+  assert.equal(failure.message, "Turn failed: Bad request (code 400) Retry the turn.");
+});
+
+it("strips entity-encoded markup instead of leaving a tag for the client to parse", () => {
+  const failure = makeProviderFailure({
+    message:
+      "&lt;script&gt;alert(1)&lt;/script&gt;&lt;img src=x onerror=alert(2)&gt;Gateway rejected the turn.",
+  });
+
+  assert.equal(failure.message, "Gateway rejected the turn.");
+});
+
+it("redacts secrets inside an entity-hidden URL", () => {
+  const failure = makeProviderFailure({
+    message:
+      "<P>https&#58;&#47;&#47;user&#58;pass&#64;example&#46;test&#47;path&#63;access_token&#61;entity-secret</P>",
+  });
+
+  assert.equal(failure.message, "https://example.test/path");
+  assert.notInclude(failure.message, "entity-secret");
+});
+
+it("falls back to the default message when the page carries no readable text", () => {
+  const failure = makeProviderFailure({ message: "<!DOCTYPE html><HTML><HEAD></HEAD></HTML>" });
+
+  assert.equal(failure.message, "Provider turn failed.");
 });
 
 it.effect("keys terminal failure items by provider turn across retries and fallback paths", () =>

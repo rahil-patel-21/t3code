@@ -20,12 +20,11 @@ import {
   getProjectOrderKey,
   selectProjectGroupingSettings,
 } from "../logicalProject";
-import { resolveNewThreadEnvMode, resolveProjectSettings } from "@t3tools/shared/projectSettings";
+import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import {
   readProject,
   readProjects,
   readThreadShell,
-  readThreadShells,
   useProjects,
   useQuietThreadShell,
 } from "../state/entities";
@@ -34,7 +33,6 @@ import {
   resolveNewDraftStartFromOrigin,
   resolveNewThreadModelSelectionOverride,
 } from "../lib/chatThreadActions";
-import { readT3ProjectFile } from "../lib/t3ProjectFileDefaults";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentServerConfigsAtom } from "../state/server";
 import { resolveThreadRouteTarget } from "../threadRoutes";
@@ -138,28 +136,9 @@ export function useNewThreadHandler() {
           currentRouteTarget?.kind === "draft" ? currentRouteTarget.draftId : null,
         destinationDraftId,
       });
-    const resolveDefaultEnvMode = async (): Promise<DraftThreadEnvMode> => {
-      const consultProjectFile =
-        project !== undefined && projectSettings.settings.defaultThreadEnvMode === null;
-      const projectFile = consultProjectFile
-        ? await readT3ProjectFile(project.environmentId, project.workspaceRoot)
-        : null;
-      return resolveNewThreadEnvMode({
-        projectSettings: resolveProjectSettings(
-          targetServerSettings,
-          project?.id ?? null,
-          project,
-          projectFile,
-        ),
-        workspaceRoot: project?.workspaceRoot ?? null,
-        newProjectsRoot: environmentServerConfigs.get(projectRef.environmentId)?.newProjectsRoot,
-        projectHasThreads: readThreadShells().some(
-          (thread) =>
-            thread.environmentId === projectRef.environmentId &&
-            thread.projectId === projectRef.projectId,
-        ),
-      });
-    };
+    // ponytail: no workspace picker or default; new threads always start in
+    // the current checkout. Kept async so the race guards below stay as-is.
+    const resolveDefaultEnvMode = (): Promise<DraftThreadEnvMode> => Promise.resolve("local");
     const logicalProjectKey = project
       ? deriveLogicalProjectKeyFromSettings(project, projectGroupingSettings)
       : scopedProjectKey(projectRef);

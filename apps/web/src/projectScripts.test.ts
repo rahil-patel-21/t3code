@@ -30,6 +30,8 @@ describe("projectScripts helpers", () => {
         runOnSettle: false,
         previewUrl: "http://localhost:5733",
         autoOpenPreview: true,
+        previewTarget: "browser",
+        runInBackground: true,
       }),
     ).toEqual({
       id: "dev",
@@ -37,8 +39,10 @@ describe("projectScripts helpers", () => {
       command: "pnpm dev",
       icon: "debug",
       runOnWorktreeCreate: false,
+      runInBackground: true,
       previewUrl: "http://localhost:5733",
       autoOpenPreview: true,
+      previewTarget: "browser",
     });
   });
 
@@ -53,6 +57,8 @@ describe("projectScripts helpers", () => {
         runOnSettle: false,
         previewUrl: null,
         autoOpenPreview: false,
+        previewTarget: "browser",
+        runInBackground: false,
       }),
     ).toEqual({
       id: "test",
@@ -70,7 +76,9 @@ describe("projectScripts helpers", () => {
       icon: "configure",
       previewUrl: null,
       autoOpenPreview: false,
+      previewTarget: "app",
       runOnSettle: false,
+      runInBackground: false,
     } as const;
     expect(
       buildProjectScript("setup", { ...input, runOnWorktreeCreate: true, waitForSetup: true }),

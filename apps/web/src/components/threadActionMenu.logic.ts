@@ -22,6 +22,7 @@ export type ThreadActionMenuId =
   | "copy-path"
   | "copy-branch"
   | "copy-thread-id"
+  | "reveal-in-folder"
   | "archive"
   | "delete";
 
@@ -78,6 +79,12 @@ export interface ThreadActionMenuState {
   readonly isRegeneratingTitle: boolean;
   /** Archive rejects a thread with an attached provider, so disable it here rather than let the action fail. */
   readonly isRunning: boolean;
+  /**
+   * Platform wording ("Reveal in Finder", ...) for showing the thread's folder
+   * in the environment's file manager. Null hides the item: the environment
+   * cannot reveal, or the thread has no folder.
+   */
+  readonly revealLabel: string | null;
   readonly supports: {
     readonly settlement: boolean;
     readonly autoSettleOptOut: boolean;
@@ -204,6 +211,9 @@ export function buildThreadActionMenuItems(
         { id: "copy-thread-id", label: "Thread ID", icon: "hash" },
       ],
     },
+    ...(state.revealLabel
+      ? [{ id: "reveal-in-folder" as const, label: state.revealLabel, icon: "folder" }]
+      : []),
     { id: "project-settings", label: "Project settings", icon: "settings" },
     {
       id: "archive",

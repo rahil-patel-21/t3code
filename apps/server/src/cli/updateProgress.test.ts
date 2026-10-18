@@ -1,3 +1,4 @@
+import { APP_BASE_NAME } from "@t3tools/contracts";
 import { afterEach, expect, it, vi } from "vite-plus/test";
 
 import { createUpdateProgress } from "./updateProgress.ts";
@@ -32,7 +33,7 @@ it("keeps redirected output readable without per-chunk updates or escapes", () =
   output.report({ stage: "validate" });
   output.finish();
   expect(output.text()).toBe(
-    "  Downloading...\n  Verifying the download...\n  Extracting T3 Code...\n  Checking the new executable...\n",
+    `  Downloading...\n  Verifying the download...\n  Extracting ${APP_BASE_NAME}...\n  Checking the new executable...\n`,
   );
 });
 

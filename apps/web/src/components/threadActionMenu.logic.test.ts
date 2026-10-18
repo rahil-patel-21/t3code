@@ -17,6 +17,7 @@ const baseState: ThreadActionMenuState = {
   canSnoozeNow: true,
   isRegeneratingTitle: false,
   isRunning: false,
+  revealLabel: null,
   supports: {
     settlement: true,
     autoSettleOptOut: true,
@@ -115,6 +116,17 @@ describe("buildThreadActionMenuItems", () => {
       icon: "settings",
     });
     expect(items[copyIndex + 2]?.id).toBe("archive");
+  });
+
+  it("offers reveal beside the utility actions only when the environment can reveal", () => {
+    expect(ids(baseState)).not.toContain("reveal-in-folder");
+    const items = buildThreadActionMenuItems({ ...baseState, revealLabel: "Reveal in Finder" });
+    const copyIndex = items.findIndex((item) => item.id === "copy");
+    expect(items.slice(copyIndex + 1, copyIndex + 3).map((item) => item.id)).toEqual([
+      "reveal-in-folder",
+      "project-settings",
+    ]);
+    expect(items[copyIndex + 1]?.label).toBe("Reveal in Finder");
   });
 
   it("offers project filtering only for surfaces with a scoped thread list", () => {

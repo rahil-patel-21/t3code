@@ -1,3 +1,14 @@
+/**
+ * Usage reporting contract.
+ *
+ * Each environment scans native session files and databases, including work
+ * driven outside T3 Code. Source status describes gaps in local coverage.
+ *
+ * Environments return pre-aggregated `(day, hourStart?, provider, model,
+ * project?, sourcePath?)` buckets. Raw transcript records never cross the wire.
+ *
+ * @module usage
+ */
 import * as Schema from "effect/Schema";
 
 import { ForwardCompatibleArray, NonNegativeInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
@@ -50,6 +61,11 @@ export const UsageTokenTotals = Schema.Struct({
 });
 export type UsageTokenTotals = typeof UsageTokenTotals.Type;
 
+/**
+/**
+ * A bucket's cost split by token category, in USD. A provider-reported cost is
+ * split in proportion to the model's list rates.
+ */
 export const UsageCategoryCost = Schema.Struct({
   input: Schema.Number,
   cacheRead: Schema.Number,
@@ -58,11 +74,27 @@ export const UsageCategoryCost = Schema.Struct({
 });
 export type UsageCategoryCost = typeof UsageCategoryCost.Type;
 
+/**
+ * One `(day, hourStart?, provider, model, project?)` cell. `hourStart` is the
+ * UTC start instant of a rolling bucket and is present only for hourly requests.
+ *
+ * `costUsd` is the raw API-equivalent cost of these tokens. It is not money
+ * spent: subscription plans bill separately. `unpricedRecords` counts records
+ * whose tokens are included in the token totals but which contributed nothing
+ * to `costUsd`.
+ */
 export const UsageBucket = Schema.Struct({
   day: UsageDay,
   hourStart: Schema.optional(TrimmedNonEmptyString),
   provider: UsageProviderKind,
   model: TrimmedNonEmptyString,
+  /**
+   * Where the sessions started: the T3 project's title when that directory
+   * belongs to one, otherwise the directory itself with the home directory
+   * shown as `~`. Absent when the transcript records no directory (Grok) and
+   * from servers that predate it; neither needs a contract version bump.
+   */
+  project: Schema.optional(TrimmedNonEmptyString),
   sourcePath: Schema.optional(TrimmedNonEmptyString),
   totals: UsageTokenTotals,
   costUsd: Schema.Number,

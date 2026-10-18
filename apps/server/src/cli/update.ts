@@ -1,3 +1,4 @@
+import { APP_BASE_NAME } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import {
   CLI_RELEASE_BASE_URL_ENV,
@@ -406,8 +407,8 @@ const runUpdate = Effect.fn("cli.update.run")(function* (input: {
       : executableCurrent
         ? `Updating the background service ${serviceVersion ?? "(unknown version)"} -> ${targetVersion} (${targetChannel}).`
         : alreadyOnDisk
-          ? "Switching T3 Code"
-          : "Updating T3 Code",
+          ? `Switching ${APP_BASE_NAME}`
+          : `Updating ${APP_BASE_NAME}`,
     executableCurrent
       ? ""
       : `${currentVersion} → ${targetVersion}${targetChannel === "stable" ? "" : ` (${targetChannel})`}`,
@@ -522,7 +523,7 @@ const runUpdate = Effect.fn("cli.update.run")(function* (input: {
     serviceUpdated = restartService;
   }
 
-  progress.success(`Installed T3 Code ${targetVersion}`);
+  progress.success(`Installed ${APP_BASE_NAME} ${targetVersion}`);
   if (Option.isSome(repointed)) {
     yield* Console.log("  Run t3 to get started.\n");
   } else {

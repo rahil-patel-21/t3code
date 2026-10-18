@@ -41,7 +41,17 @@ import * as ServerSettings from "../serverSettings.ts";
 import * as CheckpointService from "./CheckpointService.ts";
 import * as EventSink from "./EventSink.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
-import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
+import type {
+  ProviderAdapterV2Event,
+  ProviderAdapterV2RuntimePolicy,
+  ProviderAdapterV2SessionRuntime,
+  ProviderAdapterV2TurnMessage,
+} from "@t3tools/provider-core/server/ProviderAdapter";
+import {
+  ProviderAdapterEventStreamError,
+  ProviderAdapterTurnStartError,
+  ProviderCommandUnsupportedError,
+} from "@t3tools/provider-core/server/ProviderAdapter";
 import * as ProviderEventIngestor from "./ProviderEventIngestor.ts";
 import type { ProjectionStoreV2Error } from "./ProjectionStore.ts";
 import {
@@ -76,10 +86,7 @@ export interface InheritedBackgroundTurnItemRoute {
   readonly runId: OrchestrationV2Run["id"];
 }
 
-type ProviderTerminalEvent = Extract<
-  ProviderAdapter.ProviderAdapterV2Event,
-  { readonly type: "turn.terminal" }
->;
+type ProviderTerminalEvent = Extract<ProviderAdapterV2Event, { readonly type: "turn.terminal" }>;
 
 function isTerminalProviderTurnStatus(status: OrchestrationV2ProviderTurn["status"]): boolean {
   return (
@@ -342,7 +349,7 @@ export function makeProviderEventRoutingState(input: {
 }
 
 export function routeProviderEvent(
-  event: ProviderAdapter.ProviderAdapterV2Event,
+  event: ProviderAdapterV2Event,
   input: ProviderEventRouteIdentity,
   state: ProviderEventRoutingState,
 ): readonly [boolean, ProviderEventRoutingState] {
@@ -521,7 +528,7 @@ export interface RunExecutionServiceV2StartRootRunInput {
   readonly commandId: CommandId;
   readonly appThread: OrchestrationV2AppThread;
   readonly providerSessionId: ProviderSessionId;
-  readonly session: ProviderAdapter.ProviderAdapterV2SessionRuntime;
+  readonly session: ProviderAdapterV2SessionRuntime;
   readonly run: OrchestrationV2Run;
   readonly rootNode: OrchestrationV2ExecutionNode;
   readonly checkpointScope: OrchestrationV2CheckpointScope;
@@ -539,9 +546,9 @@ export interface RunExecutionServiceV2StartRootRunInput {
   readonly shouldStartProviderTurn?: () => Effect.Effect<boolean, ProjectionStoreV2Error>;
   readonly shouldFinalizeRun?: () => Effect.Effect<boolean, ProjectionStoreV2Error>;
   readonly hasUnpairedRunInterruptRequest?: () => Effect.Effect<boolean, never>;
-  readonly message: ProviderAdapter.ProviderAdapterV2TurnMessage;
+  readonly message: ProviderAdapterV2TurnMessage;
   readonly modelSelection: ModelSelection;
-  readonly runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy;
+  readonly runtimePolicy: ProviderAdapterV2RuntimePolicy;
 }
 
 export interface RunExecutionServiceV2Shape {
@@ -1013,10 +1020,7 @@ export const layer: Layer.Layer<
               }
               yield* Ref.set(rootRunFinalized, true);
             });
-          const trackChildLifecycle = (
-            event: ProviderAdapter.ProviderAdapterV2Event,
-            deliverable: boolean,
-          ) =>
+          const trackChildLifecycle = (event: ProviderAdapterV2Event, deliverable: boolean) =>
             Effect.gen(function* () {
               const routing = yield* Ref.get(eventRouting);
               if (event.type === "provider_turn.updated") {
@@ -1284,7 +1288,7 @@ export const layer: Layer.Layer<
                   // end without a terminal means the run would never settle.
                   return yield* new RunExecutionIngestError({
                     runId: input.run.id,
-                    cause: new ProviderAdapter.ProviderAdapterEventStreamError({
+                    cause: new ProviderAdapterEventStreamError({
                       driver: input.providerThread.driver,
                       providerSessionId: input.providerSessionId,
                       cause: "Provider event stream ended without a root terminal.",
@@ -1415,12 +1419,15 @@ export const layer: Layer.Layer<
           const startTurn = compact
             ? (input.session.compactThread?.(turnInput) ??
               Effect.fail(
-                new ProviderAdapter.ProviderAdapterTurnStartError({
+                new ProviderAdapterTurnStartError({
                   driver: input.session.driver,
                   threadId: input.run.threadId,
                   providerThreadId: input.providerThread.id,
                   runId: input.run.id,
-                  cause: "This provider does not support context compaction.",
+                  cause: new ProviderCommandUnsupportedError({
+                    driver: input.session.driver,
+                    command: "conversation compaction (/compact)",
+                  }),
                 }),
               ))
             : input.session.startTurn(turnInput);

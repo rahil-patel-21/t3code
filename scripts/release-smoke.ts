@@ -7,6 +7,8 @@ import * as NodeURL from "node:url";
 import * as Console from "effect/Console";
 import * as Effect from "effect/Effect";
 
+import branding from "../packages/contracts/src/branding.json" with { type: "json" };
+
 const repoRoot = NodePath.resolve(NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)), "..");
 
 const workspaceFiles = [
@@ -282,7 +284,7 @@ try {
   );
   assertContains(
     nightlyReleaseMetadata,
-    "name=T3 Code Nightly 9.9.10-nightly.20260413.321 (abcdef123456)",
+    `name=${branding.name} Nightly 9.9.10-nightly.20260413.321 (abcdef123456)`,
     "Expected nightly metadata to include the short commit SHA in the release name.",
   );
 

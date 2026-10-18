@@ -223,6 +223,8 @@ const VcsStatusLocalShape = {
         path: GitFilePath,
         insertions: NonNegativeInt,
         deletions: NonNegativeInt,
+        // Untracked files have no diff against HEAD, so their counts are always 0.
+        untracked: Schema.optional(Schema.Literal(true)),
       }),
     ),
     insertions: NonNegativeInt,

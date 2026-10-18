@@ -76,7 +76,7 @@ function render(props: Partial<ComponentProps<typeof BranchToolbar>>) {
   );
 }
 
-it("keeps machine choices usable when the combined row's workspace is locked", async () => {
+it("keeps machine choices usable in the panel without a workspace mode switch", async () => {
   const onEnvironmentChange = vi.fn();
   await render({
     onEnvironmentChange,
@@ -99,9 +99,10 @@ it("keeps machine choices usable when the combined row's workspace is locked", a
   expect(document.querySelector('[role="menu"]')).toBeNull();
 
   await userEvent.click(trigger);
-  await expect
-    .element(page.getByRole("menuitemradio", { name: "New worktree" }))
-    .toHaveAttribute("aria-disabled", "true");
+  // The panel reports the workspace as read-only context; only the machine is
+  // selectable, so no workspace mode radio items are offered.
+  await expect.element(page.getByRole("menuitemradio", { name: "remote" })).toBeVisible();
+  expect(document.querySelector('[role="menu"]')?.textContent).not.toContain("New worktree");
   await userEvent.click(page.getByRole("menuitemradio", { name: "remote" }));
   expect(onEnvironmentChange).toHaveBeenCalledWith("remote");
 });

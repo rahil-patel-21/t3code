@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
+import { APP_BASE_NAME } from "../branding";
 import {
   browserClientOs,
   browserDeviceType,
@@ -80,7 +81,7 @@ describe("client telemetry metadata", () => {
         desktopBridge: { getClientPlatform: () => "darwin" },
       }),
     ).toEqual({
-      label: "T3 Code Desktop",
+      label: `${APP_BASE_NAME} Desktop`,
       deviceType: "desktop",
       os: "macOS",
       surface: "desktop",

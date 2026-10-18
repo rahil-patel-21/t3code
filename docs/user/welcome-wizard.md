@@ -78,5 +78,16 @@ with up to 100,000 input records. Run import again to continue a large batch.
 Completed conversations are not imported again. You can continue without the
 remaining history.
 
+To bring in conversations you started later in a terminal, choose **Import
+terminal sessions** in an empty project's thread list, or **Import** under
+**Terminal sessions** in the project's settings. It uses the same rules as the
+wizard.
+
+While a thread is open, the sidebar's **Terminal sessions** row lists that
+project's recent terminal sessions that T3 Code hasn't caught up with. Import one
+on its own, or choose **Sync** to pull in messages a terminal session added after
+you imported it. Sync stops once you continue that thread in T3 Code, because
+the two histories no longer match.
+
 You can continue without configuring agents or importing projects, or return to an earlier step
 using the setup progress bar. Navigation pauses while an import is running.

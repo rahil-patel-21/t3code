@@ -55,6 +55,8 @@ const MAX_METADATA_OPERATIONS_PER_SOURCE = MAX_TRANSCRIPTS_PER_SOURCE * 4;
 const MAX_METADATA_RECORDS_PER_SOURCE = 100_000;
 const MAX_METADATA_RECORDS_PER_TRANSCRIPT = 1_000;
 const RECENT_THREAD_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+/** A candidate's `recentThreadCount` counts its sessions among this many newest. */
+const RECENT_SESSION_SAMPLE = 15;
 /**
  * Large tool results (especially screenshots) can make an otherwise ordinary
  * Codex transcript several GiB. Streaming field selection avoids allocating
@@ -116,6 +118,21 @@ const decodeCodexTurnMetadata = Schema.decodeUnknownOption(CodexTurnMetadata);
 
 type DecodedTranscriptRecord = typeof TranscriptRecord.Type;
 
+/**
+ * What an earlier read of one transcript decoded, so a transcript that only grew
+ * is read from where that read stopped. `offset` follows the last
+ * newline-terminated record: a trailing record may have been mid-write.
+ */
+interface TranscriptReadState {
+  readonly device: number;
+  readonly inode: number | null;
+  readonly birthtimeMs: number | null;
+  readonly offset: number;
+  readonly records: ReadonlyArray<DecodedTranscriptRecord>;
+  readonly historyBytes: number;
+}
+const MAX_READ_STATES = 200;
+
 interface AgentSessionTranscriptMetadata {
   readonly source: AgentSessionSource;
   readonly providerInstanceId: ProviderInstanceId;
@@ -150,6 +167,16 @@ export type AgentSessionRecentThread =
   | { readonly _tag: "Duplicate"; readonly source: AgentSessionImportSource }
   | { readonly _tag: "Skipped" };
 
+export interface RecentThreadsOptions {
+  /**
+   * Rediscover transcripts when the last scan is older than this, so sessions
+   * started since then are found. Without it the last scan is reused as is.
+   */
+  readonly maxCandidateAgeMs?: number;
+  /** Sessions the caller has no use for, left unread even when their transcripts change. */
+  readonly skipSessionIds?: ReadonlySet<string>;
+}
+
 export class AgentSessionScanner extends Context.Service<
   AgentSessionScanner,
   {
@@ -157,6 +184,7 @@ export class AgentSessionScanner extends Context.Service<
     readonly recentThreads: (
       workspaceRoot: string,
       completedSources?: ReadonlyArray<AgentSessionImportSource>,
+      options?: RecentThreadsOptions,
     ) => Stream.Stream<AgentSessionRecentThread, AgentSessionScanError>;
   }
 >()("t3/project/AgentSessionScanner") {}
@@ -569,6 +597,37 @@ export const make = Effect.gen(function* () {
   // Different project imports can arrive concurrently from multiple clients.
   // Only one transcript may hold its selected-history budget at a time.
   const importReadLock = yield* Semaphore.make(1);
+  // Transcripts are append-only JSONL, so one that only grew is read from where
+  // the last read stopped. Kept within one transcript's selected-history budget.
+  // ponytail: in memory only; a restart reads each transcript in full once.
+  const readStates = new Map<string, TranscriptReadState>();
+  let readStateBytes = 0;
+  const forgetReadState = (filePath: string) => {
+    const state = readStates.get(filePath);
+    if (state === undefined) return;
+    readStates.delete(filePath);
+    readStateBytes -= state.historyBytes;
+  };
+  const rememberReadState = (filePath: string, state: TranscriptReadState) => {
+    forgetReadState(filePath);
+    if (state.historyBytes > MAX_IMPORT_HISTORY_BYTES) return;
+    readStates.set(filePath, state);
+    readStateBytes += state.historyBytes;
+    for (const [oldestPath] of readStates) {
+      if (readStateBytes <= MAX_IMPORT_HISTORY_BYTES && readStates.size <= MAX_READ_STATES) break;
+      forgetReadState(oldestPath);
+    }
+  };
+  const resumableReadState = (identity: ReturnType<typeof transcriptIdentity>) => {
+    const state = readStates.get(identity.filePath);
+    return state !== undefined &&
+      state.device === identity.device &&
+      state.inode === identity.inode &&
+      state.birthtimeMs === identity.birthtimeMs &&
+      state.offset <= identity.size
+      ? state
+      : undefined;
+  };
   const path = yield* Path.Path;
   const serverConfig = yield* ServerConfig.ServerConfig;
   const serverSettings = yield* ServerSettings.ServerSettingsService;
@@ -740,11 +799,19 @@ export const make = Effect.gen(function* () {
     ).pipe(Effect.orElseSucceed(() => null));
   });
 
+  /**
+   * Project history fields while reading, before allocating whole JSON records.
+   * Check the file identity on both sides of the read. A selected-history budget
+   * failure rejects the entire transcript before any imported messages persist.
+   * With `resumeFrom`, only bytes past its offset are read; `recordCount` counts
+   * the records this call read.
+   */
   const readTranscript = Effect.fn("AgentSessionScanner.readTranscript")(function* (
     filePath: string,
     expected: ReturnType<typeof transcriptIdentity>,
     recordLimit: number,
     source: AgentSessionSource,
+    resumeFrom?: TranscriptReadState,
   ) {
     if (expected.size > MAX_IMPORTED_TRANSCRIPT_BYTES) return null;
 
@@ -755,11 +822,24 @@ export const make = Effect.gen(function* () {
             if (!sameTranscriptIdentity(expected, transcriptIdentity(filePath, yield* file.stat))) {
               return null;
             }
+            let base = resumeFrom;
+            if (base !== undefined && base.offset > 0) {
+              // Transcripts only grow; a rewrite is caught when the old boundary lost its newline.
+              yield* file.seek(BigInt(base.offset - 1), "start");
+              const boundary = yield* file.readAlloc(1);
+              if (Option.isNone(boundary) || boundary.value[0] !== 10) {
+                forgetReadState(filePath);
+                base = undefined;
+                yield* file.seek(BigInt(0), "start");
+              }
+            }
             const records: Array<DecodedTranscriptRecord> = [];
-            let historyBytes = 0;
+            let historyBytes = base?.historyBytes ?? 0;
             let recordBytes = 0;
             let recordCount = 0;
-            let bytesRead = 0;
+            let bytesRead = base?.offset ?? 0;
+            // Newline-terminated records are complete; the state resumes after the last one.
+            let complete = { offset: bytesRead, records: 0, historyBytes };
             const reserve = (bytes: number) => {
               recordBytes += bytes;
               if (historyBytes + recordBytes > MAX_IMPORT_HISTORY_BYTES) {
@@ -796,6 +876,7 @@ export const make = Effect.gen(function* () {
                 return null;
               }
 
+              const chunkOffset = bytesRead;
               bytesRead += next.value.byteLength;
               const withinBudget = yield* Effect.try(() => {
                 let start = 0;
@@ -806,6 +887,11 @@ export const make = Effect.gen(function* () {
                   reader.write(decoder.decode(next.value.subarray(start, end), { stream: true }));
                   if (newline === -1) break;
                   if (!finishRecord()) return false;
+                  complete = {
+                    offset: chunkOffset + newline + 1,
+                    records: records.length,
+                    historyBytes,
+                  };
                   start = newline + 1;
                 }
                 return true;
@@ -814,9 +900,19 @@ export const make = Effect.gen(function* () {
             }
 
             if (recordStarted && !(yield* Effect.try(finishRecord))) return null;
-            return sameTranscriptIdentity(expected, transcriptIdentity(filePath, yield* file.stat))
-              ? { records, recordCount }
-              : null;
+            if (!sameTranscriptIdentity(expected, transcriptIdentity(filePath, yield* file.stat))) {
+              return null;
+            }
+            const earlier = base?.records ?? [];
+            rememberReadState(filePath, {
+              device: expected.device,
+              inode: expected.inode,
+              birthtimeMs: expected.birthtimeMs,
+              offset: complete.offset,
+              records: [...earlier, ...records.slice(0, complete.records)],
+              historyBytes: complete.historyBytes,
+            });
+            return { records: [...earlier, ...records], recordCount };
           }),
         ),
       ),
@@ -1109,10 +1205,12 @@ export const make = Effect.gen(function* () {
   });
 
   let cachedCandidates: ReadonlyArray<RawCandidate> | null = null;
+  let cachedCandidatesAtMs = 0;
 
   const scan: AgentSessionScanner["Service"]["scan"] = Effect.gen(function* () {
     const { candidates: raw, truncated } = yield* collectCandidates();
     cachedCandidates = raw;
+    cachedCandidatesAtMs = DateTime.toEpochMillis(yield* DateTime.now);
 
     const merged = new Map<
       string,
@@ -1126,6 +1224,7 @@ export const make = Effect.gen(function* () {
     >();
     const directoryKeys = new Map<string, string>();
     const gitIdentities = new Map<string, AgentSessionProjectGit | null>();
+    const sessions: Array<{ key: string; mtimeMs: number }> = [];
 
     for (const candidate of raw) {
       const expanded = expandHomePath(candidate.cwd.trim(), homeDir);
@@ -1158,6 +1257,9 @@ export const make = Effect.gen(function* () {
         directoryKeys.set(resolved, key);
       }
       if (key === "") continue;
+      for (const transcript of candidate.transcripts) {
+        if (transcript.mtimeMs !== null) sessions.push({ key, mtimeMs: transcript.mtimeMs });
+      }
 
       const existing = merged.get(key);
       if (!existing) {
@@ -1196,6 +1298,13 @@ export const make = Effect.gen(function* () {
       importedProjectsByRoot.set(yield* directoryIdentity(projectRoot), project);
     }
 
+    const recentThreadCounts = new Map<string, number>();
+    for (const { key } of sessions
+      .toSorted((left, right) => right.mtimeMs - left.mtimeMs)
+      .slice(0, RECENT_SESSION_SAMPLE)) {
+      recentThreadCounts.set(key, (recentThreadCounts.get(key) ?? 0) + 1);
+    }
+
     const candidates: Array<AgentSessionProjectCandidate> = [];
     for (const [key, entry] of merged.entries()) {
       const importedProject =
@@ -1208,6 +1317,7 @@ export const make = Effect.gen(function* () {
         ...(importedProject === undefined ? {} : { projectId: importedProject.id }),
         sources: entry.sources,
         threadCount: entry.threadCount,
+        recentThreadCount: recentThreadCounts.get(key) ?? 0,
         lastActiveAt:
           entry.lastActiveAtMs === null
             ? null
@@ -1234,6 +1344,7 @@ export const make = Effect.gen(function* () {
   const prepareRecentThreads = Effect.fn("AgentSessionScanner.prepareRecentThreads")(function* (
     workspaceRoot: string,
     completedSources: ReadonlyArray<AgentSessionImportSource>,
+    options: RecentThreadsOptions,
   ) {
     const root = path.resolve(expandHomePath(workspaceRoot, homeDir));
     const realRoot = yield* fileSystem.realPath(root).pipe(Effect.orElseSucceed(() => root));
@@ -1242,8 +1353,17 @@ export const make = Effect.gen(function* () {
     const nowMs = DateTime.toEpochMillis(yield* DateTime.now);
     const cutoffMs = nowMs - RECENT_THREAD_WINDOW_MS;
 
-    const candidates = cachedCandidates ?? (yield* collectCandidates()).candidates;
-    cachedCandidates = candidates;
+    const stale =
+      options.maxCandidateAgeMs !== undefined &&
+      nowMs - cachedCandidatesAtMs > options.maxCandidateAgeMs;
+    const candidates =
+      cachedCandidates !== null && !stale
+        ? cachedCandidates
+        : (yield* collectCandidates()).candidates;
+    if (candidates !== cachedCandidates) {
+      cachedCandidates = candidates;
+      cachedCandidatesAtMs = nowMs;
+    }
 
     const eligibleTranscripts: Array<{
       readonly candidate: RawCandidate;
@@ -1256,6 +1376,10 @@ export const make = Effect.gen(function* () {
       if ((yield* directoryIdentity(resolved)) !== rootIdentity) continue;
 
       for (const transcript of candidate.transcripts) {
+        // Claude names a transcript after its session; a Codex rollout name ends with its UUID.
+        const fileName = path.basename(transcript.filePath, ".jsonl");
+        const fileSessionId = candidate.source === "codex" ? fileName.slice(-36) : fileName;
+        if (options.skipSessionIds?.has(fileSessionId)) continue;
         if (
           transcript.mtimeMs === null ||
           transcript.mtimeMs < cutoffMs ||
@@ -1315,21 +1439,25 @@ export const make = Effect.gen(function* () {
               source: completedSource,
             });
           }
+          const resumeFrom = resumableReadState(identity);
+          const unreadBytes = identity.size - (resumeFrom?.offset ?? 0);
           if (
             transcriptsRemaining === 0 ||
             recordsRemaining === 0 ||
             identity.size > MAX_IMPORTED_TRANSCRIPT_BYTES ||
-            identity.size > bytesRemaining
+            unreadBytes > bytesRemaining
           ) {
             return Option.some<AgentSessionRecentThread>({ _tag: "Skipped" });
           }
+          // Reserve the unread bytes even if the read or parse fails.
           transcriptsRemaining -= 1;
-          bytesRemaining -= identity.size;
+          bytesRemaining -= unreadBytes;
           const snapshot = yield* readTranscript(
             transcript.filePath,
             identity,
             recordsRemaining,
             candidate.source,
+            resumeFrom,
           );
           if (snapshot === null) {
             return Option.some<AgentSessionRecentThread>({ _tag: "Skipped" });
@@ -1391,7 +1519,8 @@ export const make = Effect.gen(function* () {
   const recentThreads: AgentSessionScanner["Service"]["recentThreads"] = (
     workspaceRoot,
     completedSources = [],
-  ) => Stream.unwrap(prepareRecentThreads(workspaceRoot, completedSources));
+    options = {},
+  ) => Stream.unwrap(prepareRecentThreads(workspaceRoot, completedSources, options));
 
   return AgentSessionScanner.of({ scan, recentThreads });
 });

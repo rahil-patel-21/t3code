@@ -14,6 +14,18 @@ class CatalogDependencyResolutionError extends Schema.TaggedError<CatalogDepende
   }
 }
 
+/**
+ * Strip a trailing version range from a package selector.
+ *
+ * Catalog keys are bare package names, but a pnpm override key is a selector
+ * that may carry a range (`undici@^8`, `@types/node@24`). Searching from index
+ * 1 skips the scope marker of a bare scoped name like `@clerk/backend`.
+ */
+function selectorPackageName(selector: string): string {
+  const rangeSeparator = selector.indexOf("@", 1);
+  return rangeSeparator === -1 ? selector : selector.slice(0, rangeSeparator);
+}
+
 export function resolveCatalogDependencies(
   dependencies: Record<string, string>,
   catalog: Record<string, string>,
@@ -26,10 +38,13 @@ export function resolveCatalogDependencies(
       }
 
       const catalogKey = spec.slice("catalog:".length).trim();
-      const selector = name.split(">").at(-1) ?? name;
-      const versionIndex = selector.indexOf("@", 1);
-      const packageName = versionIndex === -1 ? selector : selector.slice(0, versionIndex);
-      const lookupKey = catalogKey.length > 0 ? catalogKey : packageName;
+      // An override key is a selector: `parent[@range]>target[@range]`. Like
+      // pnpm, a bare `catalog:` there means the catalog entry of the package the
+      // selector targets, so both the parent part and any version range come
+      // off before the lookup (`undici@^8` and `@opencode/protocol>effect`
+      // both resolve against the bare `undici` and `effect` entries).
+      const lookupKey =
+        catalogKey.length > 0 ? catalogKey : selectorPackageName(name.split(">").at(-1) ?? name);
       const resolved = catalog[lookupKey];
 
       if (typeof resolved !== "string" || resolved.length === 0) {

@@ -2,6 +2,7 @@ import type {
   EnvironmentProject,
   EnvironmentThreadShell,
 } from "@t3tools/client-runtime/state/shell";
+import { APP_BASE_NAME } from "@t3tools/contracts";
 
 import type {
   AgentActivityPhase,
@@ -68,7 +69,7 @@ export function buildShowcaseAgentActivity(
     });
   }
   return {
-    title: "T3 Code",
+    title: APP_BASE_NAME,
     subtitle: "Agent work in progress",
     activeCount: rows.filter((row) => ACTIVE_PHASES.has(row.phase)).length,
     updatedAt: new Date(now).toISOString(),

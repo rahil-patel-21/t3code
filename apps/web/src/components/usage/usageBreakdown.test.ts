@@ -1,12 +1,7 @@
 import type { ModelTotals } from "@t3tools/shared/usageMerge";
 import { describe, expect, it } from "vite-plus/test";
 
-import {
-  cacheHitRate,
-  costPerMillionTokens,
-  modelShare,
-  sortModelsByTokens,
-} from "./usageBreakdown";
+import { cacheHitRate, costPerMillionTokens, modelShare, sortByTokens } from "./usageBreakdown";
 
 const model = (
   name: string,
@@ -33,7 +28,7 @@ const model = (
   ...overrides,
 });
 
-describe("sortModelsByTokens", () => {
+describe("sortByTokens", () => {
   it("sorts by tokens, breaks ties by cost, and leaves the input alone", () => {
     const models = [
       model("lower-cost", 100, 1),
@@ -41,7 +36,7 @@ describe("sortModelsByTokens", () => {
       model("higher-cost", 100, 3),
     ];
 
-    expect(sortModelsByTokens(models).map((item) => item.model)).toEqual([
+    expect(sortByTokens(models).map((item) => item.model)).toEqual([
       "more-tokens",
       "higher-cost",
       "lower-cost",

@@ -335,6 +335,8 @@ export const readCursorAccountUsage = Effect.fn("readCursorAccountUsage")(functi
           model: event.model,
           rateModel: cursorRateModel(event.model),
           sessionId,
+          // Cursor's usage events do not record the working directory.
+          cwd: "",
           totals,
           reportedCostUsd,
           speed: "standard",

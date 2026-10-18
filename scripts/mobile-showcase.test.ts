@@ -3,6 +3,7 @@ import * as NodePath from "node:path";
 import { assert, it } from "@effect/vitest";
 import { PNG } from "pngjs";
 
+import branding from "../packages/contracts/src/branding.json" with { type: "json" };
 import showcaseConfig, {
   DEFAULT_SHOWCASE_THEME,
   resolveShowcaseAndroidAbi,
@@ -306,7 +307,7 @@ it("selects a reachable LAN IPv4 address", () => {
 it("seeds a playful multi-environment project spectrum", () => {
   assert.deepStrictEqual(
     SHOWCASE_PROJECTS.map((project) => project.title),
-    ["T3 Code", "React", "Linux"],
+    [branding.name, "React", "Linux"],
   );
   assert.deepStrictEqual(
     SHOWCASE_ENVIRONMENTS.map((environment) => environment.label),

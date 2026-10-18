@@ -10,6 +10,8 @@ import * as NodeFS from "node:fs";
 import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 
+// The raw JSON, not the contracts barrel, keeps Effect out of the launcher.
+import branding from "@t3tools/contracts/branding.json" with { type: "json" };
 import type {
   PendingServiceUpdate,
   ServiceLauncherChildMessage,
@@ -828,7 +830,7 @@ export class Launcher {
 export async function main(): Promise<void> {
   const baseDir = process.env.T3CODE_HOME?.trim();
   if (baseDir === undefined || baseDir === "") {
-    throw new Error("T3CODE_HOME is required by the T3 Code service launcher.");
+    throw new Error(`T3CODE_HOME is required by the ${branding.name} service launcher.`);
   }
   const statePath = NodePath.join(baseDir, "runtime", SERVICE_STATE_FILE);
   const state = await readServiceState(statePath);

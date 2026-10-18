@@ -553,9 +553,51 @@ function removeRecordEntry<T>(record: Record<string, T>, key: string): Record<st
   return remaining;
 }
 
+export const TERMINAL_NAME_MAX_LENGTH = 64;
+
+const NO_TERMINAL_NAMES: Readonly<Record<string, string>> = Object.freeze({});
+
+/** The name given to a terminal, if any. Ids are data, so they are not looked up on the prototype. */
+export function terminalName(
+  names: Readonly<Record<string, string>>,
+  terminalId: string,
+): string | undefined {
+  return Object.hasOwn(names, terminalId) ? names[terminalId] : undefined;
+}
+
+/** A thread's names without those of `terminalIds`, or the same record when none had one. */
+function forgetTerminalNames(
+  terminalNamesByThreadKey: Record<string, Record<string, string>>,
+  threadKey: string,
+  terminalIds: Iterable<string>,
+): Record<string, Record<string, string>> {
+  const names = terminalNamesByThreadKey[threadKey];
+  if (names === undefined) return terminalNamesByThreadKey;
+  const remaining = { ...names };
+  let changed = false;
+  for (const terminalId of terminalIds) {
+    if (Object.hasOwn(remaining, terminalId)) {
+      delete remaining[terminalId];
+      changed = true;
+    }
+  }
+  if (!changed) return terminalNamesByThreadKey;
+  return Object.keys(remaining).length === 0
+    ? removeRecordEntry(terminalNamesByThreadKey, threadKey)
+    : { ...terminalNamesByThreadKey, [threadKey]: remaining };
+}
+
 interface TerminalUiStateStoreState {
   terminalUiStateByThreadKey: Record<string, ThreadTerminalUiState>;
   suppressedTerminalIdsByThreadKey: Record<string, string[]>;
+  /**
+   * Names given to terminals on this device, by thread and then terminal id,
+   * for drawer and panel terminals alike. A name goes when its terminal
+   * closes, since the next terminal opened can be given the same id.
+   */
+  terminalNamesByThreadKey: Record<string, Record<string, string>>;
+  /** Names a terminal. An empty name gives it back the one it is shown by otherwise. */
+  renameTerminal: (threadRef: ScopedThreadRef, terminalId: string, name: string) => void;
   setTerminalOpen: (threadRef: ScopedThreadRef, open: boolean) => void;
   setTerminalHeight: (threadRef: ScopedThreadRef, height: number) => void;
   splitTerminal: (threadRef: ScopedThreadRef, terminalId: string) => void;
@@ -601,15 +643,34 @@ export const useTerminalUiStateStore = create<TerminalUiStateStoreState>()(
                 suppression.suppressed,
               )
             : state.suppressedTerminalIdsByThreadKey;
+          // Closed here, which panel terminals are too, or dropped because the
+          // server no longer has them.
+          const nextTerminalIds = selectThreadTerminalUiState(
+            nextTerminalUiStateByThreadKey,
+            threadRef,
+          ).terminalIds;
+          const goneTerminalIds = selectThreadTerminalUiState(
+            state.terminalUiStateByThreadKey,
+            threadRef,
+          ).terminalIds.filter((terminalId) => !nextTerminalIds.includes(terminalId));
+          const nextTerminalNamesByThreadKey = forgetTerminalNames(
+            state.terminalNamesByThreadKey,
+            threadKey,
+            suppression?.suppressed
+              ? [...goneTerminalIds, suppression.terminalId]
+              : goneTerminalIds,
+          );
           if (
             nextTerminalUiStateByThreadKey === state.terminalUiStateByThreadKey &&
-            nextSuppressedTerminalIdsByThreadKey === state.suppressedTerminalIdsByThreadKey
+            nextSuppressedTerminalIdsByThreadKey === state.suppressedTerminalIdsByThreadKey &&
+            nextTerminalNamesByThreadKey === state.terminalNamesByThreadKey
           ) {
             return state;
           }
           return {
             terminalUiStateByThreadKey: nextTerminalUiStateByThreadKey,
             suppressedTerminalIdsByThreadKey: nextSuppressedTerminalIdsByThreadKey,
+            terminalNamesByThreadKey: nextTerminalNamesByThreadKey,
           };
         });
       };
@@ -617,6 +678,28 @@ export const useTerminalUiStateStore = create<TerminalUiStateStoreState>()(
       return {
         terminalUiStateByThreadKey: {},
         suppressedTerminalIdsByThreadKey: {},
+        terminalNamesByThreadKey: {},
+        renameTerminal: (threadRef, terminalId, name) =>
+          set((state) => {
+            const threadKey = terminalThreadKey(threadRef);
+            const trimmed = name.trim().slice(0, TERMINAL_NAME_MAX_LENGTH);
+            const names = state.terminalNamesByThreadKey[threadKey] ?? NO_TERMINAL_NAMES;
+            if (
+              threadRef.threadId.length === 0 ||
+              (terminalName(names, terminalId) ?? "") === trimmed
+            ) {
+              return state;
+            }
+            return {
+              terminalNamesByThreadKey:
+                trimmed === ""
+                  ? forgetTerminalNames(state.terminalNamesByThreadKey, threadKey, [terminalId])
+                  : {
+                      ...state.terminalNamesByThreadKey,
+                      [threadKey]: { ...names, [terminalId]: trimmed },
+                    },
+            };
+          }),
         setTerminalOpen: (threadRef, open) => {
           const terminalState = selectThreadTerminalUiState(
             get().terminalUiStateByThreadKey,
@@ -700,9 +783,11 @@ export const useTerminalUiStateStore = create<TerminalUiStateStoreState>()(
             );
             const hadSuppressedTerminalIds =
               state.suppressedTerminalIdsByThreadKey[threadKey] !== undefined;
+            const hadTerminalNames = state.terminalNamesByThreadKey[threadKey] !== undefined;
             if (
               nextTerminalUiStateByThreadKey === state.terminalUiStateByThreadKey &&
-              !hadSuppressedTerminalIds
+              !hadSuppressedTerminalIds &&
+              !hadTerminalNames
             ) {
               return state;
             }
@@ -710,6 +795,10 @@ export const useTerminalUiStateStore = create<TerminalUiStateStoreState>()(
               terminalUiStateByThreadKey: nextTerminalUiStateByThreadKey,
               suppressedTerminalIdsByThreadKey: removeRecordEntry(
                 state.suppressedTerminalIdsByThreadKey,
+                threadKey,
+              ),
+              terminalNamesByThreadKey: removeRecordEntry(
+                state.terminalNamesByThreadKey,
                 threadKey,
               ),
             };
@@ -720,7 +809,8 @@ export const useTerminalUiStateStore = create<TerminalUiStateStoreState>()(
             const hadTerminalUiState = state.terminalUiStateByThreadKey[threadKey] !== undefined;
             const hadSuppressedTerminalIds =
               state.suppressedTerminalIdsByThreadKey[threadKey] !== undefined;
-            if (!hadTerminalUiState && !hadSuppressedTerminalIds) {
+            const hadTerminalNames = state.terminalNamesByThreadKey[threadKey] !== undefined;
+            if (!hadTerminalUiState && !hadSuppressedTerminalIds && !hadTerminalNames) {
               return state;
             }
             return {
@@ -732,6 +822,10 @@ export const useTerminalUiStateStore = create<TerminalUiStateStoreState>()(
                 state.suppressedTerminalIdsByThreadKey,
                 threadKey,
               ),
+              terminalNamesByThreadKey: removeRecordEntry(
+                state.terminalNamesByThreadKey,
+                threadKey,
+              ),
             };
           }),
         removeOrphanedTerminalUiStates: (activeThreadKeys) =>
@@ -740,6 +834,7 @@ export const useTerminalUiStateStore = create<TerminalUiStateStoreState>()(
               [
                 ...Object.keys(state.terminalUiStateByThreadKey),
                 ...Object.keys(state.suppressedTerminalIdsByThreadKey),
+                ...Object.keys(state.terminalNamesByThreadKey),
               ].filter((key) => !activeThreadKeys.has(key)),
             );
             if (orphanedIds.size === 0) {
@@ -749,13 +844,16 @@ export const useTerminalUiStateStore = create<TerminalUiStateStoreState>()(
             const nextSuppressedTerminalIdsByThreadKey = {
               ...state.suppressedTerminalIdsByThreadKey,
             };
+            const nextTerminalNamesByThreadKey = { ...state.terminalNamesByThreadKey };
             for (const id of orphanedIds) {
               delete nextTerminalUiStateByThreadKey[id];
               delete nextSuppressedTerminalIdsByThreadKey[id];
+              delete nextTerminalNamesByThreadKey[id];
             }
             return {
               terminalUiStateByThreadKey: nextTerminalUiStateByThreadKey,
               suppressedTerminalIdsByThreadKey: nextSuppressedTerminalIdsByThreadKey,
+              terminalNamesByThreadKey: nextTerminalNamesByThreadKey,
             };
           }),
       };
@@ -767,7 +865,19 @@ export const useTerminalUiStateStore = create<TerminalUiStateStoreState>()(
       migrate: migratePersistedTerminalUiStateStoreState,
       partialize: (state) => ({
         terminalUiStateByThreadKey: state.terminalUiStateByThreadKey,
+        terminalNamesByThreadKey: state.terminalNamesByThreadKey,
       }),
     },
   ),
 );
+
+/** Names given to this thread's terminals on this device. */
+export function useTerminalNames(
+  threadRef: ScopedThreadRef | null | undefined,
+): Readonly<Record<string, string>> {
+  return useTerminalUiStateStore((state) =>
+    threadRef
+      ? (state.terminalNamesByThreadKey[terminalThreadKey(threadRef)] ?? NO_TERMINAL_NAMES)
+      : NO_TERMINAL_NAMES,
+  );
+}

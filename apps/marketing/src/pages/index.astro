@@ -4,6 +4,7 @@ import desktopScreenshot from "../assets/app-desktop.webp";
 import Layout from "../layouts/Layout.astro";
 import {
   ANDROID_PLAY_STORE_URL,
+  APP_BASE_NAME,
   GITHUB_REPOSITORY_URL,
   IOS_APP_STORE_URL,
   MARKETING_STATS,
@@ -99,7 +100,7 @@ const mobileEndorsementRows = [
                 src={desktopScreenshot.src}
                 srcset={`${screenshot.srcSet.attribute}, ${desktopScreenshot.src} ${desktopScreenshot.width}w`}
                 sizes="(max-width: 960px) min(864px, calc(100vw - 20px)), min(1180px, calc(100vw - 60px))"
-                alt="T3 Code with a settled thread beside its pull request diff"
+                alt={`${APP_BASE_NAME} with a settled thread beside its pull request diff`}
                 width={desktopScreenshot.width}
                 height={desktopScreenshot.height}
                 loading="eager"
@@ -204,7 +205,7 @@ const mobileEndorsementRows = [
       <div class="section-head">
         <h2>Bring your own sub</h2>
         <p>
-          T3 Code doesn't resell tokens. Plug in Claude Code, Codex, Antigravity,
+          {APP_BASE_NAME} doesn't resell tokens. Plug in Claude Code, Codex, Antigravity,
           OpenCode, Cursor, or Grok with the credentials you already have. We
           orchestrate them, you keep your plan.
         </p>
@@ -269,7 +270,7 @@ const mobileEndorsementRows = [
       <div
         class="git-visual"
         role="img"
-        aria-label="Illustration of the T3 Code Git workflow: review a diff, commit and push changes, and open a pull request."
+        aria-label={`Illustration of the ${APP_BASE_NAME} Git workflow: review a diff, commit and push changes, and open a pull request.`}
       >
         <div class="pr-card tile">
           <div class="pr-head">
@@ -348,7 +349,7 @@ const mobileEndorsementRows = [
             <div><span class="prompt">$</span> cd t3code &amp;&amp; vp install</div>
             <div class="dim">✓ 1 284 packages installed in 4.2s</div>
             <div><span class="prompt">$</span> vp run dev</div>
-            <div class="dim">▲ T3 Code dev server → <span class="accent">http://localhost:4001</span></div>
+            <div class="dim">▲ {APP_BASE_NAME} dev server → <span class="accent">http://localhost:4001</span></div>
             <div class="cursor"><span class="prompt">$</span><span class="caret"></span></div>
           </div>
         </div>
@@ -401,7 +402,7 @@ const mobileEndorsementRows = [
         Your agents deserve better than a terminal.
       </h2>
       <p class="cta-sub">
-        T3 Code is free, open source and fast. Install it, plug in the harness
+        {APP_BASE_NAME} is free, open source and fast. Install it, plug in the harness
         you already pay for, and let your agents get to work.
       </p>
       <div class="cta-actions">

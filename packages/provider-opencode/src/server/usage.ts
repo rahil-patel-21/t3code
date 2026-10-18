@@ -67,6 +67,7 @@ function parseOpenCodeMessage(
     timestampMs,
     model,
     sessionId: fallback.sessionId || text(message.sessionID),
+    cwd: text(object(message.path).cwd),
     totals,
     // OpenCode writes zero for models without a known rate, including paid
     // subscription models. Let the shared price table estimate those records.

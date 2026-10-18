@@ -10,6 +10,7 @@ import {
   ThreadId,
   TrimmedNonEmptyString,
 } from "./baseSchemas.ts";
+import { APP_BASE_NAME } from "./branding.ts";
 import { SourceControlProviderKind } from "./sourceControl.ts";
 
 export const PullRequestInvolvement = Schema.Literals(["all", "reviewing", "authored"]);
@@ -859,8 +860,7 @@ const PROVIDER_REQUIREMENT = new Map<
     {
       missing:
         "Install Forgejo CLI (`fj` 0.6 or later) from https://codeberg.org/forgejo-contrib/forgejo-cli or Gitea CLI (`tea` 0.16 or later) from https://gitea.com/gitea/tea to browse Forgejo pull requests.",
-      unauthenticated:
-        "Authenticate your Forgejo or Gitea server with `fj --host <server-url> auth add-token` on the T3 Code server. If fj is missing or unconfigured for that server, use `tea login add`. A configured fj account must be repaired with fj.",
+      unauthenticated: `Authenticate your Forgejo or Gitea server with \`fj --host <server-url> auth add-token\` on the ${APP_BASE_NAME} server. If fj is missing or unconfigured for that server, use \`tea login add\`. A configured fj account must be repaired with fj.`,
     },
   ],
   [

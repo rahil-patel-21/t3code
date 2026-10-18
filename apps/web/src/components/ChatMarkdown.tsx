@@ -1273,9 +1273,12 @@ const CHAT_MARKDOWN_MEDIA_BOUNDS_CLASS_NAME = cn(
 );
 const CHAT_MARKDOWN_MEDIA_LAYOUT_CLASS_NAME = "inline-block!";
 const CHAT_MARKDOWN_MEDIA_FRAME_CLASS_NAME = "rounded-lg border border-border/40";
+// Images preview at half the video bound; clicking one opens it full size.
+const CHAT_MARKDOWN_IMAGE_MAX_REM = 15;
+const CHAT_MARKDOWN_IMAGE_MAX_WIDTH_CLASS_NAME = "max-w-[min(100%,15rem)]";
 const CHAT_MARKDOWN_IMAGE_SIZE_CLASS_NAME = cn(
-  "h-auto w-auto object-contain",
-  CHAT_MARKDOWN_MEDIA_BOUNDS_CLASS_NAME,
+  "h-auto max-h-[15rem] w-auto object-contain",
+  CHAT_MARKDOWN_IMAGE_MAX_WIDTH_CLASS_NAME,
 );
 
 function markdownImageCopy(alt: string, src: string, title: string | undefined): string {
@@ -1293,22 +1296,23 @@ function markdownImageCopy(alt: string, src: string, title: string | undefined):
 function authoredImageSizeStyle(
   width: string | number | undefined,
   height: string | number | undefined,
-  maxHeightRem = 30,
+  maxHeightRem = CHAT_MARKDOWN_IMAGE_MAX_REM,
 ): CSSProperties | undefined {
   const parsedWidth = Number(width);
   const parsedHeight = Number(height);
   const hasWidth = Number.isFinite(parsedWidth) && parsedWidth > 0;
   const hasHeight = Number.isFinite(parsedHeight) && parsedHeight > 0;
+  const maxRem = `${CHAT_MARKDOWN_IMAGE_MAX_REM}rem`;
   if (hasWidth && hasHeight) {
     return {
       width: parsedWidth,
       height: "auto",
       aspectRatio: `${parsedWidth} / ${parsedHeight}`,
-      maxWidth: `min(100%, 30rem, ${(maxHeightRem * parsedWidth) / parsedHeight}rem)`,
+      maxWidth: `min(100%, ${maxRem}, ${(maxHeightRem * parsedWidth) / parsedHeight}rem)`,
     };
   }
-  if (hasWidth) return { maxWidth: `min(100%, 30rem, ${parsedWidth}px)` };
-  if (hasHeight) return { maxHeight: `min(30rem, ${parsedHeight}px)` };
+  if (hasWidth) return { maxWidth: `min(100%, ${maxRem}, ${parsedWidth}px)` };
+  if (hasHeight) return { maxHeight: `min(${maxRem}, ${parsedHeight}px)` };
   return undefined;
 }
 
@@ -1383,7 +1387,7 @@ function ChatMarkdownImageFallback(props: {
 
 const CHAT_MARKDOWN_IMAGE_FRAME_CLASS_NAME = cn(
   "aspect-video w-full overflow-hidden bg-muted/60",
-  CHAT_MARKDOWN_MEDIA_MAX_WIDTH_CLASS_NAME,
+  CHAT_MARKDOWN_IMAGE_MAX_WIDTH_CLASS_NAME,
   CHAT_MARKDOWN_MEDIA_FRAME_CLASS_NAME,
 );
 
@@ -1599,12 +1603,12 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
         ? null
         : fallbackSrc + (props.srcFragment ?? "");
   const knownSize = assetUrl._tag === "Success" ? assetUrl.imageDimensions : undefined;
-  const maxHeightRem = props.maxHeightRem ?? 30;
+  const maxHeightRem = props.maxHeightRem ?? CHAT_MARKDOWN_IMAGE_MAX_REM;
   const style =
     props.style ??
     (knownSize
       ? authoredImageSizeStyle(knownSize.width, knownSize.height, maxHeightRem)
-      : maxHeightRem !== 30
+      : maxHeightRem !== CHAT_MARKDOWN_IMAGE_MAX_REM
         ? { maxHeight: `${maxHeightRem}rem` }
         : undefined);
   const actionsSource: MediaActionSource = {

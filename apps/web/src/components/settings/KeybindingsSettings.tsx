@@ -34,6 +34,7 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 
+import { APP_BASE_NAME } from "../../branding";
 import { isElectron } from "../../env";
 import { useOpenInPreferredEditor } from "../../editorPreferences";
 import { formatShortcutLabel } from "../../keybindings";
@@ -252,8 +253,8 @@ function UnknownWhenVariableWarning({
 
   return (
     <WarningTooltipIcon label={label} focusable={focusable} className="size-4.5">
-      T3 Code does not recognize this condition yet. It can still be saved, but it may not match
-      unless the runtime provides it.
+      {APP_BASE_NAME} does not recognize this condition yet. It can still be saved, but it may not
+      match unless the runtime provides it.
     </WarningTooltipIcon>
   );
 }

@@ -117,10 +117,22 @@ export interface AcpSessionRuntimeOptions {
     readonly name: string;
     readonly version: string;
   };
+  /**
+   * ACP `authenticate` method id sent before session setup. Omit it for agents
+   * that own their own sign-in and advertise no ACP auth methods — MiniMax
+   * Code rejects every `methodId` with -32602 because sign-in is `mcode login`.
+   */
   readonly authMethodId?: string;
   /**
-   * Antigravity selects its credential source (Google account vs API key) from
-   * the method, so the session must not open first.
+   * Set to `false` to skip the `authenticate` round-trip entirely, whether it
+   * would run eagerly or in response to an auth-required error. Defaults to
+   * `true`; a missing `authMethodId` also skips it.
+   */
+  readonly authenticate?: boolean;
+  /**
+   * Call `authenticate` right after `initialize` instead of waiting for an
+   * auth-required error. Antigravity selects its credential source (Google
+   * account vs API key) from the method, so the session must not open first.
    */
   readonly authenticateEagerly?: boolean;
   readonly mcpServers?: ReadonlyArray<EffectAcpSchema.McpServer>;
@@ -2225,7 +2237,11 @@ export const make = (
         return { sessionId, sessionSetupResult };
       });
 
-      if (options.authenticateEagerly === true) {
+      // Agents that own their sign-in expose no auth methods and reject every
+      // `methodId` (MiniMax Code answers -32602 because sign-in is `mcode login`),
+      // so the round-trip is opt-out rather than mandatory.
+      const authenticateDisabled = options.authenticate === false;
+      if (options.authenticateEagerly === true && !authenticateDisabled) {
         // The configured method is authoritative here: Antigravity accepts
         // methods (API key, Vertex) it does not list in `initialize`.
         const authenticatePayload = {
@@ -2239,7 +2255,9 @@ export const make = (
       }
       const { sessionId, sessionSetupResult } = yield* setupSession.pipe(
         Effect.catch((error) =>
-          !isAcpAuthenticationRequired(error) || options.authenticateOnAuthRequired === false
+          !isAcpAuthenticationRequired(error) ||
+          authenticateDisabled ||
+          options.authenticateOnAuthRequired === false
             ? Effect.fail(error)
             : authenticateAfterRequired(error).pipe(Effect.andThen(setupSession)),
         ),

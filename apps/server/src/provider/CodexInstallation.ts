@@ -1,5 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off - Effect has no incremental digest.
-import { ProviderDriverKind, type ProviderInstallState } from "@t3tools/contracts";
+import { APP_BASE_NAME, ProviderDriverKind, type ProviderInstallState } from "@t3tools/contracts";
 import { cliArchiveTarCommand } from "@t3tools/shared/cliRelease";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { resolveCommandPath, resolveSpawnCommand } from "@t3tools/shared/shell";
@@ -284,7 +284,7 @@ export const makeCodexInstallation = Effect.fn("makeCodexInstallation")(function
       return executable;
     },
     Effect.mapError(
-      wrapFailure("resolve", "Codex is not installed in T3 Code. Install it to continue."),
+      wrapFailure("resolve", `Codex is not installed in ${APP_BASE_NAME}. Install it to continue.`),
     ),
   );
   const acquire = Effect.fn("CodexInstallation.acquire")(function* () {

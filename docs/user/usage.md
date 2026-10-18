@@ -7,11 +7,17 @@ desktop when the terminal is not focused. Customize `usage.open` in
 ## Understand your usage
 
 **Usage** combines Codex, Claude Code, Grok Build, OpenCode, Antigravity, Pi, and Cursor history
-from your connected environments. It shows token use, cache savings, model breakdowns, and estimated API-equivalent
-cost, split by token type and by speed. These estimates are not your subscription bill.
+from your connected environments. It shows token use, cache savings, model and project breakdowns,
+and estimated API-equivalent cost, split by token type and by speed. These estimates are not your
+subscription bill.
+
 **Premium** is what Fast and Ultrafast requests cost above standard rates. Cost that cannot be
 split, such as a provider-reported cost for a model without public rates, shows as **Other**.
 Select a model under **Breakdown** to see its trend, cache hit rate, and cost per million tokens.
+
+The project breakdown credits each session to the folder it started in. Sessions in a T3 project's
+folder or one of its worktrees show the project's name; other folders show their path. Grok,
+Antigravity, and Cursor usage does not record a folder and appears as **Unknown**.
 
 Totals depend on the history available on each server. Grok turns without a saved completed-turn
 record are missing from the totals.

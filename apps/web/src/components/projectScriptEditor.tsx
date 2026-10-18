@@ -33,6 +33,7 @@ import {
 } from "~/lib/projectScriptKeybindings";
 import { keybindingFromKeyboardEvent } from "~/components/settings/KeybindingsSettings.logic";
 import { commandForProjectScript, nextProjectScriptId } from "~/projectScripts";
+import { APP_BASE_NAME } from "~/branding";
 import { readEnvironmentScope, useEnvironmentScope } from "~/state/session";
 import { useComposerMenuState } from "./chat/useComposerMenuState";
 import {
@@ -57,6 +58,7 @@ import {
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Popover, PopoverPopup, PopoverTrigger } from "./ui/popover";
+import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "./ui/select";
 import { Switch } from "./ui/switch";
 import { Textarea } from "./ui/textarea";
 
@@ -95,6 +97,10 @@ export interface NewProjectScriptInput {
   keybinding?: string | null;
   previewUrl: string | null;
   autoOpenPreview: boolean;
+  /** Omit for the in-app preview. */
+  previewTarget?: "app" | "browser";
+  /** Omit to run the script in a terminal the user watches. */
+  runInBackground?: boolean;
 }
 
 export type ProjectScriptActionResult = AtomCommandResult<void, unknown>;
@@ -109,6 +115,8 @@ export const EMPTY_PROJECT_SCRIPT_INPUT: NewProjectScriptInput = {
   keybinding: null,
   previewUrl: null,
   autoOpenPreview: false,
+  previewTarget: "app",
+  runInBackground: false,
 };
 
 export interface ProjectScriptEditorRequest {
@@ -133,6 +141,8 @@ export function editorRequestForScript(
       keybinding: keybindingValueForCommand(keybindings, commandForProjectScript(script.id)),
       previewUrl: script.previewUrl ?? null,
       autoOpenPreview: script.autoOpenPreview ?? false,
+      previewTarget: script.previewTarget ?? "app",
+      runInBackground: script.runInBackground ?? false,
     },
   };
 }
@@ -271,6 +281,8 @@ function ProjectScriptEditorForm({
   const [keybinding, setKeybinding] = useState("");
   const [previewUrl, setPreviewUrl] = useState("");
   const [autoOpenPreview, setAutoOpenPreview] = useState(false);
+  const [previewTarget, setPreviewTarget] = useState<"app" | "browser">("app");
+  const [runInBackground, setRunInBackground] = useState(false);
   const [savingRequest, setSavingRequest] = useState<ProjectScriptEditorRequest | null>(null);
   const pendingSubmissionRef = useRef<{ request: ProjectScriptEditorRequest } | null>(null);
 
@@ -300,6 +312,8 @@ function ProjectScriptEditorForm({
       setKeybinding(request.initial.keybinding ?? "");
       setPreviewUrl(request.initial.previewUrl ?? "");
       setAutoOpenPreview(request.initial.autoOpenPreview);
+      setPreviewTarget(request.initial.previewTarget ?? "app");
+      setRunInBackground(request.initial.runInBackground ?? false);
       setSavingRequest(null);
     }
   }
@@ -376,6 +390,8 @@ function ProjectScriptEditorForm({
           : {}),
         previewUrl: trimmedPreviewUrl.length > 0 ? trimmedPreviewUrl : null,
         autoOpenPreview: trimmedPreviewUrl.length > 0 ? autoOpenPreview : false,
+        previewTarget,
+        runInBackground,
       } satisfies NewProjectScriptInput;
     } catch (error) {
       setValidationError(error instanceof Error ? error.message : "Failed to save action.");
@@ -504,7 +520,7 @@ function ProjectScriptEditorForm({
                 onChange={(event) => setPreviewUrl(event.target.value)}
               />
               <p className="text-xs text-muted-foreground">
-                Open this URL in the in-app preview when this action runs.
+                Open this URL when this action runs, once its server is listening.
               </p>
             </div>
             <label className="flex items-center justify-between gap-3 rounded-md border border-border/70 px-3 py-2 text-sm dark:border-transparent dark:bg-white/[0.035]">
@@ -545,6 +561,45 @@ function ProjectScriptEditorForm({
                 onCheckedChange={(checked) => setAutoOpenPreview(Boolean(checked))}
               />
             </label>
+            <div
+              className={`flex items-center justify-between gap-3 rounded-md border border-border/70 px-3 py-2 text-sm dark:border-transparent dark:bg-white/[0.035] ${
+                previewUrl.trim().length === 0 ? "opacity-60" : ""
+              }`}
+            >
+              <span>Open preview in</span>
+              <Select
+                value={previewTarget}
+                disabled={previewUrl.trim().length === 0}
+                onValueChange={(value) =>
+                  setPreviewTarget(value === "browser" ? "browser" : "app")
+                }
+              >
+                <SelectTrigger size="xs" className="w-36" aria-label="Open preview in">
+                  <SelectValue>
+                    {previewTarget === "browser" ? "Default browser" : APP_BASE_NAME}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectPopup align="end" alignItemWithTrigger={false}>
+                  <SelectItem value="app">{APP_BASE_NAME}</SelectItem>
+                  <SelectItem value="browser">Default browser</SelectItem>
+                </SelectPopup>
+              </Select>
+            </div>
+            <div className="flex items-center justify-between gap-3 rounded-md border border-border/70 px-3 py-2 text-sm dark:border-transparent dark:bg-white/[0.035]">
+              <span>Terminal</span>
+              <Select
+                value={runInBackground ? "background" : "open"}
+                onValueChange={(value) => setRunInBackground(value === "background")}
+              >
+                <SelectTrigger size="xs" className="w-36" aria-label="Terminal">
+                  <SelectValue>{runInBackground ? "Background" : "Default size"}</SelectValue>
+                </SelectTrigger>
+                <SelectPopup align="end" alignItemWithTrigger={false}>
+                  <SelectItem value="open">Default size</SelectItem>
+                  <SelectItem value="background">Background</SelectItem>
+                </SelectPopup>
+              </Select>
+            </div>
             {validationError && <p className="text-sm text-destructive">{validationError}</p>}
           </fieldset>
         </form>

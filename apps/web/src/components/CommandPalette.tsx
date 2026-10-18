@@ -77,6 +77,7 @@ import {
   SquarePenIcon,
   SunIcon,
   TextSearchIcon,
+  WaypointsIcon,
 } from "lucide-react";
 import { requestThreadFindOpen } from "./chat/threadFindActionBus";
 import {
@@ -84,6 +85,7 @@ import {
   useEffect,
   useEffectEvent,
   useLayoutEffect,
+  useMemo,
   useReducer,
   useRef,
   useState,
@@ -117,6 +119,7 @@ import {
 } from "./settings/ThemePreviewCircles";
 import { readLocalApi } from "../localApi";
 import { desktopLocalBackendId } from "../connection/desktopLocal";
+import { agentSessionScan } from "../state/agentSessions";
 import { filesystemEnvironment, useFilesystemReadAccess } from "../state/filesystem";
 import { projectEnvironment } from "../state/projects";
 import { useEnvironmentQuery } from "../state/query";
@@ -198,6 +201,7 @@ import {
   RECENT_THREAD_LIMIT,
   reduceCommandPaletteUiState,
   type SearchOverlayMode,
+  selectFrequentSessionProjects,
 } from "./CommandPalette.logic";
 import { orderItemsByPreferredIds, sortLogicalProjectsForSidebar } from "./Sidebar.logic";
 import { resolveEnvironmentOptionLabel } from "./BranchToolbar.logic";
@@ -2025,6 +2029,23 @@ function OpenCommandPaletteDialog(props: {
     });
   }
 
+  if (
+    environments.some(
+      (environment) => environment.serverConfig?.environment.capabilities.apiGateway === true,
+    )
+  ) {
+    actionItems.push({
+      kind: "action",
+      value: "action:api-gateway",
+      searchTerms: ["api gateway", "api", "http", "request", "rest", "curl", "postman", "endpoint"],
+      title: "Open API Gateway",
+      icon: <WaypointsIcon className={ITEM_ICON_CLASS} />,
+      run: async () => {
+        await navigate({ to: "/gateway" });
+      },
+    });
+  }
+
   actionItems.push({
     kind: "action",
     value: "action:usage",
@@ -2108,19 +2129,50 @@ function OpenCommandPaletteDialog(props: {
   }));
   const sourceSelectionViewValue =
     addProjectEnvironmentId === null ? null : `sources:${addProjectEnvironmentId}`;
-  const activeGroups =
+  const isAddProjectSourcesView =
     addProjectEnvironmentId !== null &&
     currentView !== null &&
-    currentView.groups[0]?.value === sourceSelectionViewValue
-      ? buildAddProjectSourceGroups(
+    currentView.groups[0]?.value === sourceSelectionViewValue;
+  // The scan walks the environment's Claude Code and Codex history, so only the sources view runs it.
+  const sessionProjectScan = useEnvironmentQuery(
+    isAddProjectSourcesView
+      ? agentSessionScan({ environmentId: addProjectEnvironmentId, input: {} })
+      : null,
+  );
+  const frequentSessionProjects = useMemo(
+    () => selectFrequentSessionProjects(sessionProjectScan.data?.candidates ?? []),
+    [sessionProjectScan.data],
+  );
+  const activeGroups = isAddProjectSourcesView
+    ? [
+        ...(frequentSessionProjects.length === 0
+          ? []
+          : [
+              {
+                value: "frequent-session-projects",
+                label: "Frequently used",
+                items: frequentSessionProjects.map((candidate): CommandPaletteActionItem => ({
+                  kind: "action",
+                  value: `action:add-project:${addProjectEnvironmentId}:session:${candidate.path}`,
+                  searchTerms: [candidate.title, candidate.path],
+                  title: candidate.title,
+                  description: candidate.path,
+                  icon: <FolderIcon className={ITEM_ICON_CLASS} />,
+                  keepOpen: true,
+                  run: () => handleAddProject(candidate.path),
+                })),
+              },
+            ]),
+        ...buildAddProjectSourceGroups(
           addProjectEnvironmentId,
           buildPaletteRemoteSourceReadiness(sourceControlDiscovery.data),
-        )
-      : currentView?.groups[0]?.value === "themes"
-        ? changeThemeItem.groups
-        : currentView?.groups[0]?.value === "appearance"
-          ? changeAppearanceItem.groups
-          : (currentView?.groups ?? rootGroups);
+        ),
+      ]
+    : currentView?.groups[0]?.value === "themes"
+      ? changeThemeItem.groups
+      : currentView?.groups[0]?.value === "appearance"
+        ? changeAppearanceItem.groups
+        : (currentView?.groups ?? rootGroups);
 
   const filteredGroups = filterCommandPaletteGroups({
     activeGroups,

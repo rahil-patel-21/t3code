@@ -415,6 +415,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["composer rest resting scroll wheel conversation timeline shrink minimize"],
   },
   {
+    id: "context-window-indicator",
+    title: "Context window indicator",
+    to: "/settings/general",
+    searchTerms: ["composer meter usage tokens circle ring compact"],
+  },
+  {
     id: "send-shortcut",
     title: "Send shortcut",
     to: "/settings/general",
@@ -430,7 +436,9 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "provider-update-checks",
     title: "Provider update checks",
     to: "/settings/general",
-    searchTerms: ["installed cli versions newer available codex claude cursor grok opencode"],
+    searchTerms: [
+      "installed cli versions newer available codex claude cursor grok minimax mcode opencode",
+    ],
     scope: "environment-defaults",
   },
   {
@@ -450,13 +458,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: [
       "balanced performance battery saver advanced git fetch provider health refresh host power monitor idle policy",
     ],
-  },
-  {
-    id: "new-threads",
-    title: "New threads",
-    to: "/settings/general",
-    scope: "project-defaults",
-    searchTerms: ["default workspace mode draft local worktree"],
   },
   {
     id: "worktree-submodules",
@@ -569,12 +570,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["build plan composer old"],
   },
   {
-    id: "legacy-context-window-indicator",
-    title: "Context window indicator (legacy)",
-    to: "/settings/general",
-    searchTerms: ["composer meter usage tokens circle old"],
-  },
-  {
     id: "legacy-sidebar",
     title: "Sidebar (legacy)",
     to: "/settings/general",
@@ -632,6 +627,9 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/providers",
     searchTerms: [
       "agents cli codex claude cursor grok opencode antigravity google sign in sign out install subscription instances authentication api key models configuration binary path config directory endpoint arguments environment variables display name accent color custom favorite hidden auto compact",
+      // "minimax code" as its own term so the full product name earns the
+      // exact-phrase ranking boost instead of matching token by token.
+      "minimax mcode minimax code",
     ],
   },
   {

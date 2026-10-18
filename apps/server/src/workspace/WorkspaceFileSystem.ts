@@ -1,11 +1,15 @@
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeFS from "node:fs";
+import * as NodeChildProcess from "node:child_process";
 import * as NodeFSP from "node:fs/promises";
+import * as NodeUtil from "node:util";
 
 import type {
   FilesystemEntryMetadata,
   FilesystemGetMetadataInput,
   FilesystemGetMetadataResult,
+  ProjectDeleteEntryInput,
+  ProjectRenameEntryInput,
   ProjectReadFileInput,
   ProjectReadFileResult,
   ProjectWriteFileInput,
@@ -17,6 +21,7 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 
@@ -26,6 +31,47 @@ import * as WorkspacePaths from "./WorkspacePaths.ts";
 import { fileHeaderMimeType } from "./fileHeaderMimeType.ts";
 
 const PROJECT_READ_FILE_MAX_BYTES = 1024 * 1024;
+
+const execFile = NodeUtil.promisify(NodeChildProcess.execFile);
+// A trash helper that hangs (a stuck Finder or D-Bus session) must not hang the request.
+const TRASH_TIMEOUT_MS = 30_000;
+
+/**
+ * Moves a path to the host's Trash / Recycle Bin so deletes stay recoverable.
+ * ponytail: Linux relies on `gio trash`; hosts without it (headless servers)
+ * fail the delete rather than falling back to a permanent remove.
+ */
+async function moveToTrash(absolutePath: string, platform: NodeJS.Platform): Promise<void> {
+  if (platform === "darwin") {
+    await execFile(
+      "osascript",
+      [
+        "-l",
+        "JavaScript",
+        "-e",
+        'function run(argv) { ObjC.import("Foundation"); if (!$.NSFileManager.defaultManager.trashItemAtURLResultingItemURLError($.NSURL.fileURLWithPath(argv[0]), null, null)) throw new Error("Could not move to Trash"); }',
+        absolutePath,
+      ],
+      { timeout: TRASH_TIMEOUT_MS },
+    );
+    return;
+  }
+  if (platform === "win32") {
+    const literal = `'${absolutePath.replaceAll("'", "''")}'`;
+    await execFile(
+      "powershell.exe",
+      [
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        `Add-Type -AssemblyName Microsoft.VisualBasic; $p = ${literal}; if (Test-Path -LiteralPath $p -PathType Container) { [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteDirectory($p, 'OnlyErrorDialogs', 'SendToRecycleBin') } else { [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile($p, 'OnlyErrorDialogs', 'SendToRecycleBin') }`,
+      ],
+      { timeout: TRASH_TIMEOUT_MS },
+    );
+    return;
+  }
+  await execFile("gio", ["trash", absolutePath], { timeout: TRASH_TIMEOUT_MS });
+}
 
 // Windows also reaches `.git` through trailing dots or spaces, a `:` stream
 // suffix, or the 8.3 short name `GIT~1`. Names compare upcased, as NTFS does.
@@ -50,6 +96,8 @@ export class WorkspaceFileSystemOperationError extends Schema.TaggedError<Worksp
       "close",
       "make-directory",
       "write-file",
+      "rename",
+      "trash",
     ]),
     cause: Schema.Defect(),
   },
@@ -128,6 +176,20 @@ export class WorkspaceFileSystem extends Context.Service<
       | WorkspaceFileSystemError
       | WorkspacePaths.WorkspacePathOutsideRootError
       | KnownWorkspaces.UnknownWorkspaceError
+    >;
+    /** Rename or move an entry within the workspace root. Refuses to overwrite. */
+    readonly renameEntry: (
+      input: ProjectRenameEntryInput,
+    ) => Effect.Effect<
+      void,
+      WorkspaceFileSystemError | WorkspacePaths.WorkspacePathOutsideRootError
+    >;
+    /** Move an entry within the workspace root to the host's Trash. */
+    readonly deleteEntry: (
+      input: ProjectDeleteEntryInput,
+    ) => Effect.Effect<
+      void,
+      WorkspaceFileSystemError | WorkspacePaths.WorkspacePathOutsideRootError
     >;
   }
 >()("t3/workspace/WorkspaceFileSystem") {}
@@ -508,7 +570,132 @@ export const make = Effect.gen(function* () {
     return { relativePath: target.relativePath };
   });
 
-  return WorkspaceFileSystem.of({ getMetadata, readFile, writeFile });
+  /**
+   * Rename and trash act on the entry itself, so only its parent chain has to
+   * stay inside the root. The lexical check alone would let `link/file`, where
+   * `link` is a symlink out of the workspace, move or trash files elsewhere.
+   * Checks the nearest existing ancestor, since a rename may create parents.
+   */
+  const assertParentWithinRoot = Effect.fn("WorkspaceFileSystem.assertParentWithinRoot")(function* (
+    input: { readonly cwd: string; readonly relativePath: string },
+    absolutePath: string,
+  ) {
+    const realWorkspaceRoot = yield* Effect.tryPromise({
+      try: () => NodeFSP.realpath(input.cwd),
+      catch: (cause) =>
+        new WorkspaceFileSystemOperationError({
+          workspaceRoot: input.cwd,
+          relativePath: input.relativePath,
+          resolvedPath: absolutePath,
+          operationPath: input.cwd,
+          operation: "realpath-workspace-root",
+          cause,
+        }),
+    });
+    let ancestor = path.dirname(absolutePath);
+    let realAncestor: string | null = null;
+    while (realAncestor === null) {
+      const candidate = ancestor;
+      realAncestor = yield* Effect.tryPromise(() => NodeFSP.realpath(candidate)).pipe(
+        Effect.orElseSucceed(() => null),
+      );
+      if (realAncestor !== null) break;
+      const next = path.dirname(ancestor);
+      if (next === ancestor) break;
+      ancestor = next;
+    }
+    const relativeRealPath =
+      realAncestor === null ? ".." : path.relative(realWorkspaceRoot, realAncestor);
+    if (
+      relativeRealPath.startsWith(`..${path.sep}`) ||
+      relativeRealPath === ".." ||
+      path.isAbsolute(relativeRealPath)
+    ) {
+      return yield* new WorkspaceFilePathEscapeError({
+        workspaceRoot: input.cwd,
+        relativePath: input.relativePath,
+        resolvedWorkspaceRoot: realWorkspaceRoot,
+        resolvedPath: realAncestor ?? absolutePath,
+      });
+    }
+  });
+
+  const renameEntry: WorkspaceFileSystem["Service"]["renameEntry"] = Effect.fn(
+    "WorkspaceFileSystem.renameEntry",
+  )(function* (input) {
+    const source = yield* workspacePaths.resolveRelativePathWithinRoot({
+      workspaceRoot: input.cwd,
+      relativePath: input.relativePath,
+    });
+    const destination = yield* workspacePaths.resolveRelativePathWithinRoot({
+      workspaceRoot: input.cwd,
+      relativePath: input.nextRelativePath,
+    });
+    const fail = (cause: unknown) =>
+      new WorkspaceFileSystemOperationError({
+        workspaceRoot: input.cwd,
+        relativePath: input.relativePath,
+        resolvedPath: source.absolutePath,
+        operationPath: destination.absolutePath,
+        operation: "rename",
+        cause,
+      });
+    yield* assertParentWithinRoot(input, source.absolutePath);
+    yield* assertParentWithinRoot(
+      { cwd: input.cwd, relativePath: input.nextRelativePath },
+      destination.absolutePath,
+    );
+    // Never overwrite. A case-only rename on a case-insensitive filesystem sees
+    // its own source as the destination, so an existing destination is only
+    // allowed when it is the very same file (same device and inode).
+    if (yield* fileSystem.exists(destination.absolutePath).pipe(Effect.mapError(fail))) {
+      const sourceInfo = yield* fileSystem.stat(source.absolutePath).pipe(Effect.mapError(fail));
+      const destinationInfo = yield* fileSystem
+        .stat(destination.absolutePath)
+        .pipe(Effect.mapError(fail));
+      const sameFile =
+        sourceInfo.dev === destinationInfo.dev &&
+        Option.isSome(sourceInfo.ino) &&
+        Option.getOrUndefined(sourceInfo.ino) === Option.getOrUndefined(destinationInfo.ino);
+      if (!sameFile) {
+        return yield* fail(new Error(`'${destination.relativePath}' already exists.`));
+      }
+    }
+    yield* fileSystem
+      .makeDirectory(path.dirname(destination.absolutePath), { recursive: true })
+      .pipe(Effect.mapError(fail));
+    yield* fileSystem
+      .rename(source.absolutePath, destination.absolutePath)
+      .pipe(Effect.mapError(fail));
+    yield* workspaceEntries.refresh(input.cwd);
+  });
+
+  const deleteEntry: WorkspaceFileSystem["Service"]["deleteEntry"] = Effect.fn(
+    "WorkspaceFileSystem.deleteEntry",
+  )(function* (input) {
+    const target = yield* workspacePaths.resolveRelativePathWithinRoot({
+      workspaceRoot: input.cwd,
+      relativePath: input.relativePath,
+    });
+    yield* assertParentWithinRoot(input, target.absolutePath);
+    const platform = yield* HostProcess.Platform;
+    yield* Effect.tryPromise(() => moveToTrash(target.absolutePath, platform)).pipe(
+      Effect.mapError(
+        (cause) =>
+          new WorkspaceFileSystemOperationError({
+            workspaceRoot: input.cwd,
+            relativePath: input.relativePath,
+            resolvedPath: target.absolutePath,
+            operationPath: target.absolutePath,
+            operation: "trash",
+            cause,
+          }),
+      ),
+    );
+    yield* workspaceEntries.refresh(input.cwd);
+  });
+
+  return WorkspaceFileSystem.of({ getMetadata, readFile, writeFile, renameEntry, deleteEntry });
 });
 
 export const layer = Layer.effect(WorkspaceFileSystem, make);

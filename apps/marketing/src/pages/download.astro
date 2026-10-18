@@ -5,7 +5,7 @@ import iconStable from "../assets/icon.webp";
 import iconNightly from "../assets/icon-nightly.webp";
 import Layout from "../layouts/Layout.astro";
 import { RELEASES_URL } from "../lib/releases";
-import { ANDROID_PLAY_STORE_URL, IOS_APP_STORE_URL } from "../lib/site";
+import { ANDROID_PLAY_STORE_URL, APP_BASE_NAME, IOS_APP_STORE_URL } from "../lib/site";
 
 const imageProps = {
   alt: "",
@@ -16,7 +16,7 @@ const imageProps = {
 } satisfies Partial<ComponentProps<typeof Image>>;
 ---
 
-<Layout title="Download — T3 Code" description="Download T3 Code for macOS, Windows, or Linux.">
+<Layout title={`Download — ${APP_BASE_NAME}`} description={`Download ${APP_BASE_NAME} for macOS, Windows, or Linux.`}>
   <div class="download-page" id="download-page" data-channel="stable">
     <!-- The sky lives behind the header and fades to the page. It only shows on the nightly channel. -->
     <header class="download-head">
@@ -26,7 +26,7 @@ const imageProps = {
           <Image class="head-icon--stable" src={iconStable} width={64} height={64} loading="eager" {...imageProps} />
           <Image class="head-icon--nightly" src={iconNightly} width={64} height={64} loading="eager" {...imageProps} />
         </span>
-        <h1 class="heading">Download T3 Code</h1>
+        <h1 class="heading">Download {APP_BASE_NAME}</h1>
       </div>
       <div class="channel-toggle" role="tablist" aria-label="Release channel" data-rise style="--d:90ms">
         <span class="channel-thumb" aria-hidden="true"></span>

@@ -1,5 +1,6 @@
 import {
   AntigravitySettings,
+  APP_BASE_NAME,
   CodexSettings,
   ProviderDriverKind,
   type ProviderInstallCancelInput,
@@ -82,15 +83,14 @@ export const makeProviderInstallation = Effect.fn("makeProviderInstallation")(fu
       return yield* new ProviderSetupError({
         instanceId,
         operation,
-        detail: "Choose managed setup to install Codex in T3 Code.",
+        detail: `Choose managed setup to install Codex in ${APP_BASE_NAME}.`,
       });
     }
     if (managedOnly && config.binaryPath && (!isCodex || config.binaryPath !== "codex")) {
       return yield* new ProviderSetupError({
         instanceId,
         operation,
-        detail:
-          "This instance uses a custom executable. Clear its binary path to manage installation in T3 Code.",
+        detail: `This instance uses a custom executable. Clear its binary path to manage installation in ${APP_BASE_NAME}.`,
       });
     }
     return { installation, driver: instance.driverKind };

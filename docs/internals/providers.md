@@ -56,6 +56,20 @@ Opening a provider session can start MCP servers, run hooks, or launch a login b
 session creation for this reason. Antigravity likewise reserves authenticated catalog sessions for
 explicit setup or model refresh; background checks use initialization only.
 
+MiniMax Code has no ACP `authenticate` method at all, so its status check reads
+`mcode provider list` for the active credential source. That command is read-only and
+reports which credential is active without starting the agent, which is the only honest
+sign-in signal available. An unrecognized output degrades to "unknown" rather than a guess.
+
+## An agent can own its own sign-in
+
+The ACP `authenticate` round trip is not universal. MiniMax Code rejects every `methodId`
+with -32602 because sign-in is `mcode login`, entirely the CLI's business. The shared
+[runtime](../../apps/server/src/provider/acp/AcpSessionRuntime.ts) therefore treats
+`authMethodId` as optional and skips the round trip when it is absent, instead of making
+every provider invent a method id. Never add credentials to an ACP payload to work around a
+missing auth method.
+
 [Antigravity sign-in](../../apps/server/src/provider/AntigravityAuth.ts) belongs to the initiating
 T3 auth session. The client carries the return URL back to the environment because the provider's
 loopback listener may be on another machine. Forward only the callback for the owned pending flow;
@@ -128,6 +142,34 @@ Capabilities must describe what the provider can actually do. Antigravity can ca
 checkpoints but cannot roll back its conversation. The [checkpoint boundary](./overview.md#turn-completion-and-checkpoints)
 therefore rejects revert before touching files. Native permission and question option IDs must
 also survive normalization; a display label is not necessarily a valid reply.
+
+Not every ACP agent advertises models through the `models` block. MiniMax Code returns them as
+session _configuration options_ and has no `session/set_model` at all, so model selection must
+go through `session/set_config_option` with `configId: "model"`. Copying a provider that reads
+`models` silently yields an empty model list rather than an error.
+
+The same mechanism carries permission mode, which means a provider can expose fewer policies
+than T3's runtime modes. MiniMax Code's four runtime modes collapse onto three policies, so
+**Auto-accept edits** lands on **Ask** for that provider. State the lossy mapping at the adapter
+rather than letting a mode silently do nothing.
+
+Some options are only valid for some models: MiniMax Code advertises `thinkingEffort` for its
+thinking variants and rejects it with -32602 for a plain one. The live config-option list is the
+authority for whether an option is sendable, and its rejection is a benign no-op, not a turn
+failure. Its `promptCapabilities.image` and `audio` are both `false`, so image input is off.
+
+MiniMax Code has a skills system, and its data directory is `~/.minimax` — not `~/.minimax-code`,
+which holds only the installed releases. The CLI resolves `[<dataDir>, ~/.minimax]` as its data
+directory and reads `skills/`, `.builtin-skills/`, and `agents/<agent>/skills/` under it; the last
+does not apply here because T3 selects no named sub-agent. Because `initialize` advertises no
+commands, `MiniMaxCodeSkills.ts` reads those roots directly and the CLI answers the published
+`/skill:<name>` entries the same way it answers its own `/skills` list.
+
+The caution below still stands, and it is why the roots were verified against the CLI rather than
+guessed: a probe against a path that cannot exist reports an empty list identical to a correct one,
+so a wrong guess is invisible until someone checks. `~/.minimax/.builtin-skills` really does hold
+the CLI's shipped skills — an earlier revision of this file claimed no `skills/` tree existed under
+either directory, which was the reason this provider reported none.
 
 ## Attachments and stored history
 

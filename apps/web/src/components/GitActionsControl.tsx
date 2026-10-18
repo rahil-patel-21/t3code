@@ -1943,6 +1943,8 @@ export default function GitActionsControl({
                                   <span className="shrink-0">
                                     {isExcluded ? (
                                       <span className="text-muted-foreground">Excluded</span>
+                                    ) : file.untracked ? (
+                                      <span className="text-diff-addition">New</span>
                                     ) : (
                                       <>
                                         <span className="text-diff-addition">

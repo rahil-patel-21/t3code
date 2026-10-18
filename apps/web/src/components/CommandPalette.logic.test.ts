@@ -14,6 +14,7 @@ import {
   filterCommandPaletteGroups,
   findHighlightedCommandPaletteItem,
   reduceCommandPaletteUiState,
+  selectFrequentSessionProjects,
   type CommandPaletteActionItem,
   type CommandPaletteGroup,
 } from "./CommandPalette.logic";
@@ -741,6 +742,34 @@ describe("buildBrowseGroups", () => {
     finishNavigation?.();
     await action;
     expect(actionSettled).toBe(true);
+  });
+});
+
+describe("selectFrequentSessionProjects", () => {
+  it("ranks folders by their share of the latest sessions, projects included", () => {
+    const candidate = (path: string, recentThreadCount?: number, alreadyImported = false) => ({
+      path,
+      alreadyImported,
+      ...(recentThreadCount === undefined ? {} : { recentThreadCount }),
+    });
+    const selected = selectFrequentSessionProjects([
+      candidate("/work/a", 1),
+      candidate("/work/b", 6),
+      candidate("/work/project", 5, true),
+      candidate("/work/stale", 0),
+      candidate("/work/older-server"),
+      candidate("/work/c", 2),
+      candidate("/work/d", 2),
+      candidate("/work/e", 1),
+    ]);
+
+    expect(selected.map((entry) => entry.path)).toEqual([
+      "/work/b",
+      "/work/project",
+      "/work/c",
+      "/work/d",
+      "/work/a",
+    ]);
   });
 });
 

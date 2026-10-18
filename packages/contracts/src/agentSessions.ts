@@ -1,5 +1,11 @@
 import * as Schema from "effect/Schema";
-import { IsoDateTime, NonNegativeInt, ProjectId, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import {
+  IsoDateTime,
+  NonNegativeInt,
+  ProjectId,
+  ThreadId,
+  TrimmedNonEmptyString,
+} from "./baseSchemas.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
 
 export const AgentSessionSource = Schema.Literals(["claudeAgent", "codex"]);
@@ -33,6 +39,11 @@ export const AgentSessionProjectCandidate = Schema.Struct({
   projectId: Schema.optional(ProjectId),
   sources: Schema.Array(AgentSessionSource),
   threadCount: NonNegativeInt,
+  /**
+   * How many of the 15 most recent sessions across all candidates ran here.
+   * Missing on servers that predate it.
+   */
+  recentThreadCount: Schema.optionalKey(NonNegativeInt),
   lastActiveAt: Schema.NullOr(IsoDateTime),
   alreadyImported: Schema.Boolean,
   git: Schema.optionalKey(Schema.NullOr(AgentSessionProjectGit)),
@@ -49,6 +60,8 @@ export type AgentSessionScanResult = typeof AgentSessionScanResult.Type;
 export const AgentSessionImportInput = Schema.Struct({
   projectId: ProjectId,
   expectedWorkspaceRoot: Schema.optional(TrimmedNonEmptyString),
+  /** Limits the import to these provider session ids. Absent imports every recent session. */
+  providerSessionIds: Schema.optional(Schema.Array(TrimmedNonEmptyString)),
 });
 export type AgentSessionImportInput = typeof AgentSessionImportInput.Type;
 
@@ -75,6 +88,35 @@ export const AgentSessionImportResult = Schema.Struct({
   skippedCount: NonNegativeInt,
 });
 export type AgentSessionImportResult = typeof AgentSessionImportResult.Type;
+
+export const AgentSessionListProjectSessionsInput = Schema.Struct({
+  projectId: ProjectId,
+});
+export type AgentSessionListProjectSessionsInput = typeof AgentSessionListProjectSessionsInput.Type;
+
+/**
+ * A recent CLI session for one project. `available` is not imported yet, and
+ * `updated` is imported but its transcript has `newMessageCount` messages T3
+ * has not seen. A thread continued in T3 is never listed: T3 writes its own
+ * turns into the same transcript, and the histories can no longer be synced.
+ */
+export const AgentSessionProjectSession = Schema.Struct({
+  source: AgentSessionSource,
+  providerSessionId: TrimmedNonEmptyString,
+  threadId: ThreadId,
+  title: Schema.String,
+  updatedAt: IsoDateTime,
+  messageCount: NonNegativeInt,
+  state: Schema.Literals(["available", "updated"]),
+  newMessageCount: NonNegativeInt,
+});
+export type AgentSessionProjectSession = typeof AgentSessionProjectSession.Type;
+
+export const AgentSessionListProjectSessionsResult = Schema.Struct({
+  sessions: Schema.Array(AgentSessionProjectSession),
+});
+export type AgentSessionListProjectSessionsResult =
+  typeof AgentSessionListProjectSessionsResult.Type;
 
 export class AgentSessionScanError extends Schema.TaggedError<AgentSessionScanError>()(
   "AgentSessionScanError",

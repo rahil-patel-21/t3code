@@ -5,6 +5,7 @@ import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 
 import {
+  APP_BASE_NAME,
   SNAP_SHOT_ACCESSIBILITY_MAX_NODES,
   SNAP_SHOT_ACCESSIBILITY_MAX_SERIALIZED_CHARS,
   isModifierPairShortcut,
@@ -446,7 +447,7 @@ export function hideAndWaitForBlur(window: {
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
       window.removeListener("blur", onBlur);
-      reject(new Error("Timed out waiting for T3 Code to lose focus."));
+      reject(new Error(`Timed out waiting for ${APP_BASE_NAME} to lose focus.`));
     }, WINDOW_BLUR_TIMEOUT_MS);
     const onBlur = () => {
       clearTimeout(timeout);

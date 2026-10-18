@@ -142,6 +142,10 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
   projectCloneTracking: Schema.optionalKey(Schema.Boolean),
   environmentIcon: Schema.optionalKey(Schema.Boolean),
   desktopAppUpdate: Schema.optionalKey(Schema.Boolean),
+  /** Server sends HTTP requests for clients and stores their collections
+      (`apiGateway.*`, `subscribeApiGateway`). Absent on older servers, which
+      reject those calls, so clients must not offer API Gateway for them. */
+  apiGateway: Schema.optionalKey(Schema.Boolean),
   /** Server answers orchestration.subscribeCommandOutput. Absent on older servers,
       which never send command output, so clients must not subscribe. */
   commandOutputStreaming: Schema.optionalKey(Schema.Boolean),

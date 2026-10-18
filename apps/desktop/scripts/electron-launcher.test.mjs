@@ -2,6 +2,7 @@ import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
+import branding from "@t3tools/contracts/branding.json" with { type: "json" };
 import { assert, describe, it } from "vite-plus/test";
 
 import {
@@ -108,11 +109,11 @@ describe("electron development launcher", () => {
 
     assert.equal(
       values.NSScreenCaptureUsageDescription,
-      "T3 Code captures the active window when you use the snapshot shortcut.",
+      `${branding.name} captures the active window when you use the snapshot shortcut.`,
     );
     assert.equal(
       values.NSDocumentsFolderUsageDescription,
-      "T3 Code reads project files you open in the desktop app.",
+      `${branding.name} reads project files you open in the desktop app.`,
     );
   });
 

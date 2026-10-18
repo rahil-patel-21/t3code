@@ -28,7 +28,11 @@ interface PendingRpcAckRequest {
 }
 
 const pendingRpcAckRequests = new Map<string, PendingRpcAckRequest>();
-const untrackedRpcAckMethods = new Set<string>([WS_METHODS.serverGetUsageSummary]);
+const untrackedRpcAckMethods = new Set<string>([
+  WS_METHODS.serverGetUsageSummary,
+  // Answers when the API being called does, which the user chose and can watch.
+  WS_METHODS.apiGatewayExecute,
+]);
 const longRunningRpcAckMethods = new Set<string>([
   WS_METHODS.serverUpdateProvider,
   WS_METHODS.serverRefreshProviders,

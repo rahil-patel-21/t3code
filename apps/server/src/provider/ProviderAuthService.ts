@@ -1,4 +1,5 @@
 import {
+  APP_BASE_NAME,
   ProviderSetupError,
   type ChatGptReconnectProfile,
   type ChatGptTransferredProfile,
@@ -80,7 +81,7 @@ export const makeProviderAuthService = Effect.gen(function* () {
         instanceId,
         operation,
         detail: instance
-          ? "This provider does not support sign-in in T3 Code."
+          ? `This provider does not support sign-in in ${APP_BASE_NAME}.`
           : "This provider instance is no longer available.",
       });
     }

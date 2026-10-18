@@ -18,7 +18,8 @@
     "./relay": {
       "types": "./src/relay.ts",
       "import": "./src/relay.ts"
-    }
+    },
+    "./branding.json": "./src/branding.json"
   },
   "scripts": {
     "typecheck": "tsc-rs --noEmit",

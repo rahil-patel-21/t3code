@@ -1,3 +1,4 @@
+import { APP_BASE_NAME } from "@t3tools/contracts";
 import type {
   RelayAgentActivityAggregateState,
   RelayAgentActivityState,
@@ -48,7 +49,7 @@ function aggregateRowForState(state: RelayAgentActivityState) {
 
 function terminalAggregateState(state: RelayAgentActivityState): RelayAgentActivityAggregateState {
   return sanitizeAgentActivityAggregateState({
-    title: "T3 Code",
+    title: APP_BASE_NAME,
     subtitle: state.phase === "failed" ? "Agent work failed" : "Agent work completed",
     activeCount: 0,
     updatedAt: state.updatedAt,
@@ -94,7 +95,7 @@ export function makeAggregateState(input: {
       return null;
     }
     return sanitizeAgentActivityAggregateState({
-      title: "T3 Code",
+      title: APP_BASE_NAME,
       subtitle: newest.phase === "failed" ? "Agent work failed" : "Agent work completed",
       activeCount: 0,
       updatedAt: newest.updatedAt,
@@ -114,7 +115,7 @@ export function makeAggregateState(input: {
     state.updatedAt.localeCompare(latest.updatedAt) > 0 ? state : latest,
   ).updatedAt;
   return sanitizeAgentActivityAggregateState({
-    title: "T3 Code",
+    title: APP_BASE_NAME,
     subtitle: "Agent work in progress",
     activeCount: activeStates.length,
     updatedAt,

@@ -131,6 +131,10 @@ clone runs in the background: you can write your first prompt, and sending waits
 are in place. A toast tracks progress and lets you cancel; if the clone fails, retry it from the
 toast or from the banner above the composer.
 
+**Add Project** also lists up to five folders that aren't projects yet, ranked by how many of
+the last 15 Claude Code or Codex sessions on that computer ran in them. Pick one to add it. Its terminal conversations are not
+imported automatically; see [Import your projects](welcome-wizard.md#import-your-projects).
+
 For a local Git repository without a remote, **Publish Repository** creates a hosted repository,
 adds it as `origin`, and pushes your commits. If there are no commits yet, it creates the remote;
 make your first commit before pushing.

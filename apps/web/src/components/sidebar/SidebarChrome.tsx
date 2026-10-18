@@ -1,16 +1,14 @@
-import { ArrowLeftIcon, ChartNoAxesColumnIcon, SettingsIcon } from "lucide-react";
+import { ArrowLeftIcon, ChartNoAxesColumnIcon, SettingsIcon, WaypointsIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { memo } from "react";
-import { Link, useLocation, useNavigate } from "@tanstack/react-router";
+import { useLocation, useNavigate } from "@tanstack/react-router";
 
 import { useEnvironmentIdentificationMode } from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
-import { usePullRequestsSupported } from "../../state/environments";
+import { useEnvironments, usePullRequestsSupported } from "../../state/environments";
 import { T3Wordmark } from "../T3Wordmark";
 import {
   resolveEnvironmentIdentificationPillLabel,
-  resolveSidebarStageBackdropVariant,
-  SidebarStageBackdrop,
   useEnvironmentStageLabel,
 } from "../SidebarStageBackdrop";
 import { Badge } from "../ui/badge";
@@ -38,15 +36,12 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
 }) {
   const stageLabel = useEnvironmentStageLabel();
   const environmentIdentificationMode = useEnvironmentIdentificationMode();
-  const backdropVariant = resolveSidebarStageBackdropVariant(
-    stageLabel,
-    environmentIdentificationMode === "artwork",
-  );
   const pillLabel =
     environmentIdentificationMode === "pill"
       ? resolveEnvironmentIdentificationPillLabel(stageLabel)
       : null;
 
+  // ponytail: plain header by choice, no wordmark or stage artwork.
   return (
     <div
       className={cn(
@@ -54,24 +49,22 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
         isElectron && "drag-region",
       )}
     >
-      {backdropVariant ? <SidebarStageBackdrop variant={backdropVariant} /> : null}
       <div className="relative top-[calc(var(--workspace-controls-top)-env(safe-area-inset-top))] z-10 ml-[calc(var(--workspace-controls-left)+1px-env(safe-area-inset-left))] flex shrink-0 items-center md:hidden">
         <SidebarTrigger
-          variant={backdropVariant ? "media-navigation" : "ghost"}
           className="relative top-auto translate-y-0"
           aria-label="Toggle main sidebar"
         />
       </div>
-      <div className="relative z-10 flex h-8 min-w-0 flex-1 flex-wrap content-start items-center gap-x-2 overflow-hidden py-0.5">
-        <SidebarBrand onBackdrop={backdropVariant !== null} />
-        {pillLabel ? (
-          <div className="ml-1 flex h-7 items-center">
-            <Badge data-environment-identification="pill" size="sm" variant="secondary">
-              {pillLabel}
-            </Badge>
-          </div>
-        ) : null}
-      </div>
+      {pillLabel ? (
+        <Badge
+          className="ml-1 hidden md:ml-[var(--workspace-titlebar-content-left)] @[15rem]/sidebar-header:inline-flex"
+          data-environment-identification="pill"
+          size="sm"
+          variant="secondary"
+        >
+          {pillLabel}
+        </Badge>
+      ) : null}
     </div>
   );
 });
@@ -100,21 +93,6 @@ export function SidebarBrandWidthProbe({
   );
 }
 
-function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
-  return (
-    <Link
-      aria-label="Go to threads"
-      className={cn(
-        "relative z-10 ml-[var(--workspace-titlebar-content-left)] hidden h-7 w-fit min-w-0 shrink-0 items-center overflow-hidden rounded-md outline-hidden ring-ring focus-visible:ring-2 focus-visible:ring-inset md:flex",
-        onBackdrop ? "text-white" : "text-foreground",
-      )}
-      to="/"
-    >
-      <SidebarBrandMark onBackdrop={onBackdrop} />
-    </Link>
-  );
-}
-
 function SidebarBrandMark({ onBackdrop }: { onBackdrop: boolean }) {
   return (
     <span className="inline-flex min-w-0 items-baseline gap-1 text-sm font-medium tracking-tight">
@@ -130,7 +108,6 @@ function SidebarBrandMark({ onBackdrop }: { onBackdrop: boolean }) {
     </span>
   );
 }
-
 function SidebarUtilityItem({
   icon,
   label,
@@ -156,42 +133,56 @@ function SidebarUtilityItem({
   );
 }
 
-export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
+export type SidebarPage = "settings" | "usage" | "pull-requests" | "api-gateway";
+
+/** Opens the app's own pages from the footer menu or the icon rail, closing the phone sheet first. */
+export function useSidebarPages() {
   const navigate = useNavigate();
+  const { isMobile, setOpenMobile } = useSidebar();
+  const { environments } = useEnvironments();
+  // The page reads every connected server, so one of them offering pull requests is enough for
+  // the link to lead somewhere.
+  const pullRequestsSupported = usePullRequestsSupported();
+  // Requests are sent by a server, so the page needs one that can.
+  const apiGatewaySupported = environments.some(
+    (environment) => environment.serverConfig?.environment.capabilities.apiGateway === true,
+  );
+  const openPage = (page: SidebarPage) => {
+    if (isMobile) {
+      setOpenMobile(false);
+    }
+    if (page === "pull-requests") {
+      void navigate({ to: "/pull-requests", search: readPullRequestListPreferences() });
+    } else if (page === "api-gateway") {
+      void navigate({ to: "/gateway" });
+    } else {
+      void navigate({ to: page === "settings" ? "/settings" : "/usage" });
+    }
+  };
+  return { pullRequestsSupported, apiGatewaySupported, openPage };
+}
+
+/** `activityRail`: the sidebar's icon rail holds the page links and update control. */
+export const SidebarUtilityMenu = memo(function SidebarUtilityMenu({
+  activityRail = false,
+}: {
+  activityRail?: boolean;
+}) {
   const navigateToMainApp = useNavigateToMainApp();
   const { isMobile, setOpenMobile } = useSidebar();
   const isOnUtilityPage = useLocation({
     select: (location) => isSidebarUtilityPage(location.pathname),
   });
-  const pullRequestsSupported = usePullRequestsSupported();
-  const closeMobileSidebar = () => {
-    if (isMobile) {
-      setOpenMobile(false);
-    }
-  };
-  const handlePullRequestsClick = () => {
-    closeMobileSidebar();
-    void navigate({
-      to: "/pull-requests",
-      search: readPullRequestListPreferences(),
-    });
-  };
-  const handleSettingsClick = () => {
-    closeMobileSidebar();
-    void navigate({ to: "/settings" });
-  };
-
-  const handleUsageClick = () => {
-    if (isMobile) {
-      setOpenMobile(false);
-    }
-    void navigate({ to: "/usage" });
-  };
+const { pullRequestsSupported, apiGatewaySupported, openPage } = useSidebarPages();
 
   const handleBackClick = () => {
-    closeMobileSidebar();
+    if (isMobile) {
+      setOpenMobile(false);
+    }
     void navigateToMainApp();
   };
+
+  if (activityRail && !isOnUtilityPage) return null;
 
   return (
     <SidebarMenu className="flex-row items-center">
@@ -207,34 +198,45 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
           <SidebarUtilityItem
             icon={<SettingsIcon />}
             label="Settings"
-            onClick={handleSettingsClick}
+            onClick={() => openPage("settings")}
           />
           {pullRequestsSupported ? (
             <SidebarUtilityItem
               icon={<PullRequestGlyph.pullRequest />}
               label="Pull Requests"
-              onClick={handlePullRequestsClick}
+              onClick={() => openPage("pull-requests")}
+            />
+          ) : null}
+          {apiGatewaySupported ? (
+            <SidebarUtilityItem
+              icon={<WaypointsIcon />}
+              label="API Gateway"
+              onClick={() => openPage("api-gateway")}
             />
           ) : null}
           <SidebarUtilityItem
             icon={<ChartNoAxesColumnIcon />}
             label="Usage"
-            onClick={handleUsageClick}
+            onClick={() => openPage("usage")}
           />
         </>
       )}
-      <SidebarUpdatePill />
+      {activityRail ? null : <SidebarUpdatePill />}
     </SidebarMenu>
   );
 });
 
-export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
+export const SidebarChromeFooter = memo(function SidebarChromeFooter({
+  activityRail = false,
+}: {
+  activityRail?: boolean;
+}) {
   return (
     <SidebarFooter>
       <SidebarThreadUndoNotice />
       <SidebarProviderUpdatePill />
       <SidebarUpdateArchitectureWarning />
-      <SidebarUtilityMenu />
+      <SidebarUtilityMenu activityRail={activityRail} />
     </SidebarFooter>
   );
 });

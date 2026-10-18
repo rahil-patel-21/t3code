@@ -19,6 +19,7 @@ function record(overrides: Partial<UsageRecord> = {}): UsageRecord {
     timestampMs: 1_786_000_000_000,
     model: "claude-fable-5",
     sessionId: "session-a",
+    cwd: "/home/theo/project",
     totals: {
       uncachedInputTokens: 2,
       cachedInputTokens: 1000,
@@ -91,6 +92,7 @@ describe("scan cache round trip", () => {
           model: "gpt-6-astra",
           speed: "ultrafast",
           sessionId: "session-c",
+          cwd: "/home/theo/project",
           lastUsageSignature: '{"input_tokens":1}',
           sawSessionMeta: true,
           suppressingForkCopies: false,
@@ -142,7 +144,12 @@ describe("scan cache round trip", () => {
     const row = encoded.files["/a.jsonl"]!.r[0]!;
     const poisoned = {
       ...encoded,
-      files: { "/a.jsonl": { ...encoded.files["/a.jsonl"]!, r: [[...row.slice(0, 10), true]] } },
+      files: {
+        "/a.jsonl": {
+          ...encoded.files["/a.jsonl"]!,
+          r: [[...row.slice(0, 10), true, ...row.slice(11)]],
+        },
+      },
     };
 
     expect(
@@ -155,6 +162,25 @@ describe("scan cache round trip", () => {
     const previous = { ...encoded, version: 3 };
 
     expect(decodeScanCache(JSON.parse(JSON.stringify(previous)), TEST_FORMAT_MAP).size).toBe(0);
+  });
+
+  // v4 stored Claude fast mode in the slot v5 reads as a speed index, so those
+  // rows still load. They carry no directory, so their sessions read as "".
+  it("loads a v4 document, with its sessions left without a directory", () => {
+    const encoded = encodeScanCache(cacheWith([["/a.jsonl", 100, [record({ speed: "fast" })]]]));
+    const v4Row = encoded.files["/a.jsonl"]!.r[0]!;
+    const legacy = {
+      ...encoded,
+      version: 4,
+      files: {
+        "/a.jsonl": { ...encoded.files["/a.jsonl"]!, r: [v4Row.slice(0, 11)] },
+      },
+    };
+
+    const restored = decodeScanCache(JSON.parse(JSON.stringify(legacy))).get("/a.jsonl");
+    expect(restored?.records).toHaveLength(1);
+    expect(restored?.records[0]?.speed).toBe("fast");
+    expect(restored?.records[0]?.cwd).toBe("");
   });
 
   it("rewrites only changed entries and still restores the whole cache", () => {

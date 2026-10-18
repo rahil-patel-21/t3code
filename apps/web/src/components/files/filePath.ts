@@ -105,3 +105,115 @@ export function fileBreadcrumbParent(directoryPath: string): string | null {
   const separatorIndex = directoryPath.lastIndexOf("/");
   return separatorIndex === -1 ? "" : directoryPath.slice(0, separatorIndex);
 }
+
+/** Dependency, build, and cache folders no one browses, hidden even without a .gitignore. */
+const GENERATED_FOLDERS = new Set([
+  // Version control metadata (.git never reaches the client)
+  ".svn",
+  ".hg",
+  "CVS",
+  // JavaScript / TypeScript
+  "node_modules",
+  "bower_components",
+  "jspm_packages",
+  ".pnpm-store",
+  ".next",
+  ".nuxt",
+  ".svelte-kit",
+  ".angular",
+  ".expo",
+  ".docusaurus",
+  ".turbo",
+  ".parcel-cache",
+  ".nyc_output",
+  ".vercel",
+  ".netlify",
+  ".wrangler",
+  ".serverless",
+  // Python
+  "__pycache__",
+  ".venv",
+  "venv",
+  ".tox",
+  ".nox",
+  ".eggs",
+  ".pytest_cache",
+  ".mypy_cache",
+  ".ruff_cache",
+  ".pytype",
+  ".hypothesis",
+  ".ipynb_checkpoints",
+  "htmlcov",
+  // JVM, .NET, Apple, Dart
+  ".gradle",
+  ".vs",
+  "DerivedData",
+  ".build",
+  ".dart_tool",
+  ".pub-cache",
+  // Elixir, Haskell, Elm, OCaml, Zig, C/C++, Terraform, Sass
+  "_build",
+  ".elixir_ls",
+  ".stack-work",
+  "dist-newstyle",
+  "elm-stuff",
+  "_opam",
+  ".zig-cache",
+  "zig-cache",
+  "zig-out",
+  "CMakeFiles",
+  ".terraform",
+  ".sass-cache",
+]);
+
+/**
+ * Names that are build output or vendored dependencies in one ecosystem but
+ * real source in another (Ruby's `bin/` scripts, a committed Go `vendor/`), so
+ * they hide only when the project's .gitignore says they are generated.
+ */
+const IGNORED_OUTPUT_FOLDERS = new Set([
+  "build",
+  "dist",
+  "out",
+  "target",
+  "bin",
+  "obj",
+  "vendor",
+  "deps",
+  "Pods",
+  "coverage",
+  ".bundle",
+  ".idea",
+  ".output",
+  ".cache",
+]);
+
+/** OS clutter, hidden like VS Code's default `files.exclude`. */
+const JUNK_FILES = new Set([".DS_Store", "Thumbs.db"]);
+
+function isHiddenEntry(entry: ProjectEntry): boolean {
+  const name = entry.path.slice(entry.path.lastIndexOf("/") + 1);
+  if (entry.kind !== "directory") return JUNK_FILES.has(name);
+  return (
+    GENERATED_FOLDERS.has(name) ||
+    name.endsWith(".egg-info") ||
+    name.startsWith("cmake-build-") ||
+    (entry.ignored === true && IGNORED_OUTPUT_FOLDERS.has(name))
+  );
+}
+
+/**
+ * Drops dependency, build, and cache folders for every common language, with
+ * everything under them, plus OS clutter. Everything else stays, including
+ * gitignored files such as `.env` and ignored folders such as `logs/`, which
+ * the tree shows dimmed.
+ */
+export function hideGeneratedEntries<T extends ProjectEntry>(entries: readonly T[]): T[] {
+  const hiddenFolders = entries
+    .filter((entry) => entry.kind === "directory" && isHiddenEntry(entry))
+    .map((entry) => `${entry.path}/`);
+  return entries.filter(
+    (entry) =>
+      !isHiddenEntry(entry) && !hiddenFolders.some((folder) => entry.path.startsWith(folder)),
+  );
+}

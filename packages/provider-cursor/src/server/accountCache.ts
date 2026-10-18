@@ -203,6 +203,8 @@ export function decodeCursorAccountCaches(document: unknown): Map<string, Cursor
       model,
       rateModel: cursorRateModel(model),
       sessionId,
+      // Cursor's account usage API does not record the working directory.
+      cwd: "",
       totals: {
         uncachedInputTokens: uncached,
         cachedInputTokens: cached,

@@ -333,7 +333,7 @@ it.effect("uses stable diagnostics for every parsed non-repository command", () 
 
     assert.deepStrictEqual(commands, [
       { args: ["rev-parse", "--git-path", "index"], lcAll: "C" },
-      { args: ["status", "--porcelain=2", "--branch"], lcAll: "C" },
+      { args: ["status", "--porcelain=2", "--branch", "-uall"], lcAll: "C" },
       { args: ["rev-parse", "--abbrev-ref", "HEAD"], lcAll: "C" },
       { args: ["rev-parse", "--git-common-dir"], lcAll: "C" },
     ]);
@@ -379,6 +379,92 @@ it.effect("re-reads origin remote status after cache TTL expiry and bypassed inv
     assert.equal(afterExpiry.hasOriginRemote, true);
   }).pipe(Effect.provide(layerTest)),
 );
+
+it.effect("lists each untracked file in a new directory instead of the directory", () =>
+  Effect.gen(function* () {
+    const cwd = yield* makeTmpDir();
+    yield* initRepoWithCommit(cwd);
+    // Nested files, because git only collapses a wholly untracked directory.
+    yield* writeTextFile(cwd, "frontend/src/feature/index.tsx", "export const a = 1;\n");
+    yield* writeTextFile(cwd, "frontend/src/feature/other.tsx", "export const b = 2;\n");
+    yield* writeTextFile(cwd, "frontend/index.html", "<!doctype html>\n");
+    const driver = yield* GitVcsDriver.GitVcsDriver;
+
+    const status = yield* driver.statusDetailsLocal(cwd);
+
+    assert.deepStrictEqual(
+      status.workingTree.files.map((file) => file.path),
+      ["frontend/index.html", "frontend/src/feature/index.tsx", "frontend/src/feature/other.tsx"],
+    );
+    // A directory row would carry no diff and no line stats, so it cannot be previewed.
+    assert.isFalse(status.workingTree.files.some((file) => file.path.endsWith("/")));
+    // Untracked files have no numstat, so clients show "New" instead of +0 -0.
+    assert.isTrue(status.workingTree.files.every((file) => file.untracked === true));
+  }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("drops a half-written path when the capped status read truncates", () => {
+  // `-uall` bounds status by byte cap, so an extreme untracked tree truncates instead of
+  // failing. The cut can land mid-line, and the leftover half of a path would otherwise be
+  // listed as a change that does not exist.
+  //
+  // Rows are a fixed 83 bytes so the 16 MB cut lands mid-line rather than on a boundary, and
+  // every path is the same 80 characters so a partial row is detectable by its length. Paths
+  // are distinct because the driver dedupes by path.
+  const STATUS_MAX_OUTPUT_BYTES = 16 * 1024 * 1024;
+  const PATH_WIDTH = 80;
+  const ROW_WIDTH = PATH_WIDTH + 3;
+  let filler = "";
+  for (let index = 0; index * ROW_WIDTH < STATUS_MAX_OUTPUT_BYTES; index++) {
+    filler += `? ${String(index).padStart(12, "0")}${"a".repeat(68)}\n`;
+  }
+  const oversizeStatus =
+    "# branch.oid 0000000000000000000000000000000000000000\n" +
+    "# branch.head main\n" +
+    "# branch.upstream origin/main\n" +
+    "# branch.ab +0 -0\n" +
+    filler +
+    "? frontend/src/part";
+  const truncatingSpawner = ChildProcessSpawner.make((command) => {
+    if (!ChildProcess.isStandardCommand(command)) {
+      return Effect.succeed(makeNonRepositoryHandle());
+    }
+    const { args } = command;
+    const stdout = args.includes("--porcelain=2")
+      ? oversizeStatus
+      : args.includes("numstat")
+        ? ""
+        : args.includes("--git-path")
+          ? ".git/index"
+          : args.includes("--git-common-dir")
+            ? ".git"
+            : "";
+    return Effect.succeed(makeSuccessfulHandle(stdout));
+  });
+  const layer = GitVcsDriver.layer.pipe(
+    Layer.provide(layerServerConfig),
+    Layer.provideMerge(
+      Layer.merge(
+        NodeServices.layer,
+        Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, truncatingSpawner),
+      ),
+    ),
+  );
+
+  return Effect.gen(function* () {
+    const status = yield* (yield* GitVcsDriver.GitVcsDriver).statusDetailsLocal("/repo");
+
+    assert.equal(status.isRepo, true, "a truncated status read must still report the repository");
+    assert.equal(status.hasWorkingTreeChanges, true);
+    assert.isAbove(status.workingTree.files.length, 1_000);
+    const partial = status.workingTree.files.filter((file) => file.path.length !== PATH_WIDTH);
+    assert.deepStrictEqual(
+      partial.map((file) => file.path),
+      [],
+      "a row cut mid-path must not be listed as a change",
+    );
+  }).pipe(Effect.provide(layer));
+});
 
 it.effect("coalesces concurrent ref pages into one repository snapshot", () =>
   Effect.scoped(
@@ -2482,6 +2568,7 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
 
         assert.equal(status.isRepo, true);
         assert.equal(status.hasWorkingTreeChanges, true);
+        // deepInclude is exact, so this also proves a tracked edit carries no untracked flag.
         assert.deepInclude(status.workingTree.files, {
           path: "HEAD",
           insertions: 1,

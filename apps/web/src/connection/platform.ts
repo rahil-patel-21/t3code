@@ -40,6 +40,7 @@ import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
 import { FetchHttpClient } from "effect/http";
 
+import { clearApiGatewayEnvironment } from "../apiGatewayStore";
 import { APP_VERSION } from "../branding";
 import { readDesktopPrimaryBearerToken } from "../environments/primary/desktopAuth";
 import * as PrimaryEnvironmentHttpLayer from "../environments/primary/httpLayer";
@@ -763,6 +764,7 @@ const layerEnvironmentOwnedDataCleanup = Layer.succeed(
     clear: (environmentId) =>
       Effect.sync(() => {
         clearComposerDraftsEnvironment(environmentId);
+        clearApiGatewayEnvironment(environmentId);
       }),
   }),
 );

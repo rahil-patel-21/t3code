@@ -1,4 +1,5 @@
 import {
+  APP_BASE_NAME,
   AuthRelayWriteScope,
   EnvironmentHttpApi,
   type RelayClientInstallProgressEvent,
@@ -697,8 +698,8 @@ export const connectCommand = Command.make("connect", {
           const platform = yield* HostProcess.Platform;
           yield* Console.log(
             platform === "darwin"
-              ? "\n✓ Background service ready\n\nT3 Code is set to run while you are logged in to this Mac. The server establishes the T3 Connect link on startup."
-              : "\n✓ Background service ready\n\nT3 Code is set to keep running after you log out. The server establishes the T3 Connect link on startup.",
+              ? `\n✓ Background service ready\n\n${APP_BASE_NAME} is set to run while you are logged in to this Mac. The server establishes the T3 Connect link on startup.`
+              : `\n✓ Background service ready\n\n${APP_BASE_NAME} is set to keep running after you log out. The server establishes the T3 Connect link on startup.`,
           );
           return;
         }

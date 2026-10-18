@@ -4,6 +4,7 @@ import { readEnvironmentScope } from "../../state/session";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 import { useAuth } from "@clerk/expo";
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
+import { APP_BASE_NAME } from "@t3tools/contracts";
 import * as Notifications from "expo-notifications";
 import { useNavigation } from "@react-navigation/native";
 import * as Effect from "effect/Effect";
@@ -333,7 +334,7 @@ function ConfiguredSettingsNotificationsRouteScreen() {
 
       Dialog.alert(
         "Disable notifications",
-        "Open system Settings to disable notifications for T3 Code.",
+        `Open system Settings to disable notifications for ${APP_BASE_NAME}.`,
         [
           { text: "Cancel", style: "cancel" },
           { text: "Open Settings", onPress: () => void Linking.openSettings() },
@@ -482,7 +483,7 @@ function ConfiguredSettingsNotificationsRouteScreen() {
                 void openAndroidLiveUpdateSettings().catch(() => {
                   Dialog.alert(
                     "Couldn't open Settings",
-                    "Open Android Settings, select T3 Code, then enable Live Updates in Notifications.",
+                    `Open Android Settings, select ${APP_BASE_NAME}, then enable Live Updates in Notifications.`,
                   );
                 });
               }}

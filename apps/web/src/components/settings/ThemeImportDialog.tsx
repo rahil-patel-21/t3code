@@ -1,7 +1,8 @@
 import { DownloadIcon, PlusIcon } from "lucide-react";
 import type { ChangeEvent, DragEvent, UIEvent } from "react";
 import { settlePromise } from "@t3tools/client-runtime/state/runtime";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { APP_BASE_NAME } from "../../branding";
 import { cn } from "../../lib/utils";
 import {
   getCustomThemes,
@@ -495,7 +496,7 @@ export function ThemeImportDialog({
                   <div className="min-w-0">
                     <p className="text-sm font-medium">Theme file</p>
                     <p className="truncate text-xs text-muted-foreground">
-                      {fileName ?? "Drop T3 Code or VS Code .json files"}
+                      {fileName ?? `Drop ${APP_BASE_NAME} or VS Code .json files`}
                     </p>
                   </div>
                   {chooseButton()}

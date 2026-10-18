@@ -665,6 +665,44 @@ describe("mergeUsage", () => {
     expect(merged.models.map((model) => model.model)).toEqual(["higher-cost", "lower-cost"]);
   });
 
+  it("totals projects across environments and models, with unrecorded ones as null", () => {
+    const merged = mergeUsage(
+      [
+        environment(
+          "laptop",
+          summary(
+            [
+              bucket({ project: "t3code", costUsd: 4 }),
+              bucket({ project: "t3code", model: "claude-opus-5", costUsd: 3 }),
+              bucket({ provider: "grok", model: "grok-4.5", costUsd: 1 }),
+            ],
+            [
+              { provider: "claude", hostId: "laptop", homePath: "/a/.claude" },
+              { provider: "grok", hostId: "laptop", homePath: "/a/.grok" },
+            ],
+          ),
+        ),
+        environment(
+          "server",
+          summary(
+            [
+              bucket({ project: "t3code", costUsd: 2 }),
+              bucket({ project: "~/scratch", costUsd: 5 }),
+            ],
+            [{ provider: "claude", hostId: "server", homePath: "/b/.claude" }],
+          ),
+        ),
+      ],
+      USAGE_CONTRACT_VERSION,
+    );
+
+    expect(merged.projects.map((project) => [project.project, project.costUsd])).toEqual([
+      ["t3code", 9],
+      ["~/scratch", 5],
+      [null, 1],
+    ]);
+  });
+
   it("keeps two machines apart when hostname and home path collide", () => {
     const shape = { provider: "claude" as const, hostId: "mac", homePath: "/Users/theo/.claude" };
     const merged = mergeUsage(

@@ -33,6 +33,9 @@ const DEFAULT_PROVIDER_FAILURE_MESSAGE = "Provider turn failed.";
 function causeMessage(cause: unknown): string | undefined {
   const seen = new Set<unknown>();
   let message: string | undefined;
+  // Held back until the walk finishes, so a nested error that states a concrete
+  // reason wins over the generic advice to retry.
+  let generic: string | undefined;
   for (let depth = 0; depth < 16 && cause != null && !seen.has(cause); depth++) {
     seen.add(cause);
     try {
@@ -48,20 +51,30 @@ function causeMessage(cause: unknown): string | undefined {
           return stringField(cause, "message");
         case "ContextHandoffDeliveryUncertainError":
           return "T3 could not confirm whether conversation history reached the provider. Retry the turn to recover the session.";
+        case "ProviderCommandUnsupportedError":
+          // Deterministic: the provider cannot do this, so retrying never helps.
+          message ??= stringField(cause, "message");
+          break;
+        case "ProviderAdapterProtocolError":
+          // `detail` is T3's own wording for a condition it recognized, not
+          // text the provider supplied, so it is safe and far more useful than
+          // the generic retry advice: it names what was rejected and why.
+          message ??= stringField(cause, "detail");
+          break;
         case "ProviderAdapterTurnStartError":
-          message =
+          generic ??=
             "The provider could not start this turn. Retry the turn; if it keeps failing, check the provider setup and server logs.";
           break;
         case "ProviderAdapterEventStreamError":
-          message =
+          message ??=
             "The provider event stream closed unexpectedly. Retry the turn; if it keeps failing, check the provider and server logs.";
           break;
         case "ProviderAdapterOpenSessionError":
-          message =
+          message ??=
             "The provider session could not be opened. Check that the provider is installed and signed in, then retry the turn.";
           break;
         case "ProviderAdapterResumeThreadError":
-          message =
+          message ??=
             "The provider conversation could not be resumed. Retry the turn; if it keeps failing, check the provider and server logs.";
           break;
       }
@@ -70,10 +83,10 @@ function causeMessage(cause: unknown): string | undefined {
       break;
     }
   }
-  return message;
+  return message ?? generic;
 }
 
-function stringField(value: unknown, key: "message" | "code"): string | undefined {
+function stringField(value: unknown, key: "message" | "code" | "detail"): string | undefined {
   if (typeof value !== "object" || value === null) return undefined;
   try {
     const candidate = (value as Record<string, unknown>)[key];
@@ -130,8 +143,82 @@ function redactProviderFailureText(value: string): string {
     .trim();
 }
 
+/**
+ * Cheap gate: only messages carrying real tag markup take the HTML path. The
+ * encoded angle brackets matter as much as the literal ones, because a page
+ * that hides its own markup behind entities is exactly the case that must not
+ * survive to be decoded by a markdown renderer.
+ */
+const HTML_MARKUP_PATTERN = /<\/?[a-z][^>]*>|<!doctype\b[^>]*>|&lt;|&#0*60;|&#x0*3c;/iu;
+
+/** Tags whose boundaries carry meaning a reader needs as a line break. */
+const HTML_BLOCK_TAG_PATTERN =
+  /<\/?(?:br|p|div|h[1-6]|li|ul|ol|dl|dt|dd|tr|td|th|table|tbody|thead|section|article|aside|header|footer|main|nav|figure|figcaption|blockquote|pre|hr|html|head|body|title|form|fieldset)\b[^>]*>/giu;
+
+const HTML_NAMED_ENTITIES: Readonly<Record<string, string>> = {
+  amp: "&",
+  lt: "<",
+  gt: ">",
+  quot: '"',
+  apos: "'",
+  nbsp: " ",
+  "#39": "'",
+  "#x27": "'",
+};
+
+function codePointToString(codePoint: number): string | undefined {
+  if (
+    !Number.isInteger(codePoint) ||
+    codePoint < 0 ||
+    codePoint > 0x10_ff_ff ||
+    (codePoint >= 0xd8_00 && codePoint <= 0xdf_ff)
+  ) {
+    return undefined;
+  }
+  return String.fromCodePoint(codePoint);
+}
+
+function decodeHtmlEntities(value: string): string {
+  return value.replace(
+    /&(#[xX][\da-fA-F]+|#\d+|[a-zA-Z][\da-zA-Z]*);/gu,
+    (match: string, body: string): string => {
+      const lowered = body.toLowerCase();
+      if (lowered.startsWith("#x")) {
+        return codePointToString(Number.parseInt(lowered.slice(2), 16)) ?? match;
+      }
+      if (lowered.startsWith("#")) {
+        return codePointToString(Number.parseInt(lowered.slice(1), 10)) ?? match;
+      }
+      return HTML_NAMED_ENTITIES[lowered] ?? match;
+    },
+  );
+}
+
+/**
+ * Gateways answer a failed turn with a whole HTML error page, and that page
+ * rides into the client as the failure detail. Clients render detail as
+ * markdown, so the raw document reads as markup noise and hands the client a
+ * second injection surface. Reduce the document to the lines a user actually
+ * needs, before redaction, so an entity-hidden URL still gets redacted as a
+ * URL rather than slipping through as text.
+ */
+function readableProviderFailureText(value: string): string {
+  if (!HTML_MARKUP_PATTERN.test(value)) return value;
+  const decoded = decodeHtmlEntities(value);
+  const text = decoded
+    .replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1\s*>/giu, " ")
+    .replace(/<!--[\s\S]*?-->/gu, " ")
+    .replace(HTML_BLOCK_TAG_PATTERN, "\n")
+    .replace(/<[^>]*>/gu, "");
+  return text
+    .split("\n")
+    .map((line) => line.replace(/\s+/gu, " ").trim())
+    .filter((line) => line.length > 0)
+    .join("\n");
+}
+
 function boundedText(value: string, maxLength: number): string {
-  const redacted = redactProviderFailureText(value);
+  const redacted = redactProviderFailureText(readableProviderFailureText(value));
   if (redacted.length <= maxLength) return redacted;
   let end = Math.max(0, maxLength - 1);
   const finalCodeUnit = redacted.charCodeAt(end - 1);

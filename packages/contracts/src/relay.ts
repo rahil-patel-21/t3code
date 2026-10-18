@@ -14,6 +14,7 @@ import {
   ThreadId,
   TrimmedNonEmptyString,
 } from "./baseSchemas.ts";
+import { APP_BASE_NAME } from "./branding.ts";
 import { ExecutionEnvironmentDescriptor } from "./environment.ts";
 
 export const RelayAgentAwarenessPlatform = Schema.Literals(["ios", "android"]);
@@ -1250,7 +1251,7 @@ export const RelayApi = HttpApi.make("RelayApi")
     RelayServerGroup,
     RelayHooksGroup,
   )
-  .annotate(OpenApi.Title, "T3 Code Relay API")
+  .annotate(OpenApi.Title, `${APP_BASE_NAME} Relay API`)
   .annotate(OpenApi.Version, "1.0.0")
   .annotate(
     OpenApi.Description,

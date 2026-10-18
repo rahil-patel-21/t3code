@@ -1,3 +1,25 @@
+import { ProviderDriverKind } from "@t3tools/contracts";
+import {
+  AntigravityIcon,
+  ClaudeAI,
+  CursorIcon,
+  GrokIcon,
+  Icon,
+  MiniMaxCodeIcon,
+  OpenAI,
+  OpenCodeIcon,
+} from "../Icons";
+
+export const PROVIDER_ICON_BY_PROVIDER: Partial<Record<ProviderDriverKind, Icon>> = {
+  [ProviderDriverKind.make("codex")]: OpenAI,
+  [ProviderDriverKind.make("claudeAgent")]: ClaudeAI,
+  [ProviderDriverKind.make("opencode")]: OpenCodeIcon,
+  [ProviderDriverKind.make("cursor")]: CursorIcon,
+  [ProviderDriverKind.make("grok")]: GrokIcon,
+  [ProviderDriverKind.make("minimaxCode")]: MiniMaxCodeIcon,
+  [ProviderDriverKind.make("antigravity")]: AntigravityIcon,
+};
+
 export type ModelEsque = {
   slug: string;
   name: string;
@@ -30,6 +52,20 @@ export function getDisplayModelName(
 ): string {
   const name = options?.preferShortName && model.shortName ? model.shortName : model.name;
   return stripLeadingQualifier(name, model.subProvider);
+}
+
+/**
+/**
+ * Brand a driver's model names lead with ("Claude Opus 5.5"). Other drivers'
+ * names either omit their brand or are only a brand and version ("Grok 4").
+ */
+const MODEL_NAME_BRAND_BY_PROVIDER: Partial<Record<ProviderDriverKind, string>> = {
+  [ProviderDriverKind.make("claudeAgent")]: "Claude",
+};
+
+/** For rows that already show the provider brand, so "Claude Opus 5.5" reads "Opus 5.5". */
+export function stripModelNameBrand(name: string, driverKind: ProviderDriverKind): string {
+  return stripLeadingQualifier(name, MODEL_NAME_BRAND_BY_PROVIDER[driverKind]);
 }
 
 export function getProviderRowLabel(

@@ -1,6 +1,6 @@
 import { bootstrapRemoteBearerSession } from "@t3tools/client-runtime/authorization";
 import type { RemoteEnvironmentRequestError } from "@t3tools/client-runtime/rpc";
-import { PRIMARY_LOCAL_ENVIRONMENT_ID } from "@t3tools/contracts";
+import { APP_BASE_NAME, PRIMARY_LOCAL_ENVIRONMENT_ID } from "@t3tools/contracts";
 import { currentDesktopBootstrapToken } from "@t3tools/shared/desktopBootstrapToken";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -100,7 +100,7 @@ export const make = Effect.gen(function* () {
           httpBaseUrl: config.httpBaseUrl.href,
           credential,
           clientMetadata: {
-            label: "T3 Code Desktop",
+            label: `${APP_BASE_NAME} Desktop`,
             deviceType: "desktop",
           },
         }).pipe(

@@ -142,19 +142,9 @@ export function resolveQuickAction(
     };
   }
 
+  // Uncommitted changes default to a plain commit; push and the PR stay in the menu.
   if (hasChanges) {
-    if (!gitStatus.hasUpstream && !hasOriginRemote) {
-      return { label: "Commit", disabled: false, kind: "run_action", action: "commit" };
-    }
-    if (hasOpenPr || isDefaultBranch) {
-      return { label: "Commit & push", disabled: false, kind: "run_action", action: "commit_push" };
-    }
-    return {
-      label: "Commit, push & PR",
-      disabled: false,
-      kind: "run_action",
-      action: "commit_push_pr",
-    };
+    return { label: "Commit", disabled: false, kind: "run_action", action: "commit" };
   }
 
   if (!gitStatus.hasUpstream) {

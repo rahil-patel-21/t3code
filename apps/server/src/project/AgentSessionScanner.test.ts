@@ -182,6 +182,7 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
             title: path.basename(newerWorkspace),
             sources: ["claudeAgent"],
             threadCount: 1,
+            recentThreadCount: 1,
             lastActiveAt: "2026-03-01T00:00:00.000Z",
             alreadyImported: false,
             git: null,
@@ -191,10 +192,50 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
             title: path.basename(olderWorkspace),
             sources: ["claudeAgent"],
             threadCount: 2,
+            recentThreadCount: 2,
             lastActiveAt: "2026-01-02T00:00:00.000Z",
             alreadyImported: false,
             git: null,
           },
+        ]);
+      }),
+    );
+
+    it.effect("counts each directory's share of the 15 newest sessions", () =>
+      Effect.gen(function* () {
+        const path = yield* Path.Path;
+        const claudeHomePath = yield* makeTempDir("t3code-claude-home-");
+        const codexHomePath = yield* makeTempDir("t3code-codex-home-");
+        const busierWorkspace = yield* makeTempDir("t3code-workspace-busier-");
+        const latestWorkspace = yield* makeTempDir("t3code-workspace-latest-");
+
+        // More sessions overall, but all older than the newest 15.
+        for (let index = 0; index < 16; index++) {
+          yield* writeTranscript({
+            filePath: path.join(claudeHomePath, "projects", "-busier", `${index}.jsonl`),
+            contents: claudeSessionLine(busierWorkspace),
+            mtimeMs: Date.parse("2026-01-01T00:00:00.000Z") + index * 60_000,
+          });
+        }
+        for (let index = 0; index < 15; index++) {
+          yield* writeTranscript({
+            filePath: path.join(claudeHomePath, "projects", "-latest", `${index}.jsonl`),
+            contents: claudeSessionLine(latestWorkspace),
+            mtimeMs: Date.parse("2026-02-01T00:00:00.000Z") + index * 60_000,
+          });
+        }
+
+        const result = yield* runScan({ claudeHomePath, codexHomePath });
+
+        expect(
+          result.candidates.map((candidate) => ({
+            path: candidate.path,
+            threadCount: candidate.threadCount,
+            recentThreadCount: candidate.recentThreadCount,
+          })),
+        ).toEqual([
+          { path: latestWorkspace, threadCount: 15, recentThreadCount: 15 },
+          { path: busierWorkspace, threadCount: 16, recentThreadCount: 0 },
         ]);
       }),
     );
@@ -234,6 +275,7 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
             title: path.basename(otherWorkspace),
             sources: ["codex"],
             threadCount: 1,
+            recentThreadCount: 1,
             lastActiveAt: "2026-02-09T11:00:00.000Z",
             alreadyImported: false,
             git: null,
@@ -243,6 +285,7 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
             title: path.basename(workspace),
             sources: ["codex"],
             threadCount: 2,
+            recentThreadCount: 2,
             lastActiveAt: "2026-02-09T10:00:00.000Z",
             alreadyImported: false,
             git: null,
@@ -362,6 +405,7 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
             projectId: ProjectId.make("project-1"),
             sources: ["claudeAgent", "codex"],
             threadCount: 2,
+            recentThreadCount: 2,
             lastActiveAt: "2026-04-01T09:00:00.000Z",
             alreadyImported: true,
             git: null,
@@ -474,6 +518,7 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
             projectId: ProjectId.make("project-1"),
             sources: ["claudeAgent", "codex"],
             threadCount: 2,
+            recentThreadCount: 2,
             lastActiveAt: "2026-01-02T00:00:00.000Z",
             alreadyImported: true,
             git: null,
@@ -1304,6 +1349,7 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
             title: path.basename(workspace),
             sources: ["claudeAgent"],
             threadCount: 1,
+            recentThreadCount: 1,
             lastActiveAt: "2026-05-03T00:00:00.000Z",
             alreadyImported: false,
             git: null,
@@ -2198,6 +2244,73 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
         expect(transcriptOpenCount).toBe(2);
         expect(fullReadBytes).toBe(new TextEncoder().encode(contents).byteLength);
         expect(outcomes).toEqual([{ _tag: "Skipped" }]);
+      }),
+    );
+
+    it.effect("reads only what a transcript appended since the last read", () =>
+      Effect.gen(function* () {
+        const path = yield* Path.Path;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const nowMs = Date.parse("2026-08-24T12:00:00.000Z");
+        yield* TestClock.setTime(nowMs);
+        const claudeHomePath = yield* makeTempDir("t3code-claude-home-");
+        const codexHomePath = yield* makeTempDir("t3code-codex-home-");
+        const workspace = yield* makeTempDir("t3code-workspace-");
+        const transcriptPath = path.join(
+          claudeHomePath,
+          "projects",
+          "-selected",
+          "claude-growing.jsonl",
+        );
+        const line = (type: "user" | "assistant", text: string) =>
+          JSON.stringify({
+            type,
+            cwd: workspace,
+            sessionId: "claude-growing",
+            timestamp: "2026-08-24T11:00:00.000Z",
+            message: { role: type, content: text },
+          });
+        const first = `${line("user", "Fix the bug")}\n`;
+        // The CLI is still writing its next record.
+        const next = line("assistant", "Fixed");
+        const cut = next.length - 5;
+        yield* writeTranscript({
+          filePath: transcriptPath,
+          contents: first + next.slice(0, cut),
+          mtimeMs: nowMs - 2_000,
+        });
+        const messageTexts = (
+          outcomes: ReadonlyArray<AgentSessionScanner.AgentSessionRecentThread>,
+        ) =>
+          outcomes.flatMap((outcome) =>
+            outcome._tag === "Importable"
+              ? outcome.thread.messages.map((message) => message.text)
+              : [],
+          );
+
+        const [initial, grown] = yield* Effect.gen(function* () {
+          const scanner = yield* AgentSessionScanner.AgentSessionScanner;
+          const read = scanner
+            .recentThreads(workspace)
+            .pipe(Stream.runCollect, Effect.map(messageTexts));
+          const initial = yield* read;
+          // Edit bytes the first read already consumed: only a full reread would see it.
+          yield* fileSystem.writeFileString(
+            transcriptPath,
+            first.replace("Fix the bug", "Fix the BUG") + next.slice(0, cut),
+          );
+          yield* fileSystem.writeFileString(
+            transcriptPath,
+            `${next.slice(cut)}\n${line("assistant", "Done")}\n`,
+            { flag: "a" },
+          );
+          const seconds = (nowMs - 1_000) / 1000;
+          yield* fileSystem.utimes(transcriptPath, seconds, seconds);
+          return [initial, yield* read] as const;
+        }).pipe(Effect.provide(layerScannerTest({ claudeHomePath, codexHomePath })));
+
+        expect(initial).toEqual(["Fix the bug"]);
+        expect(grown).toEqual(["Fix the bug", "Fixed", "Done"]);
       }),
     );
 

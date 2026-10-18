@@ -1,6 +1,7 @@
 import { threadPullRequestSearchTerms } from "@t3tools/shared/threadPullRequests";
 import type { CommandPaletteLinkedThreads } from "../commandPaletteBus";
 import {
+  type AgentSessionProjectCandidate,
   type EnvironmentId,
   type FilesystemBrowseEntry,
   type KeybindingCommand,
@@ -553,6 +554,23 @@ export function filterPinnedBrowseEntries(input: {
       ? (input.browseEntries.find((entry) => namesMatch(entry.name, input.filterQuery)) ?? null)
       : null;
   return { visibleEntries, exactEntry };
+}
+
+const FREQUENT_SESSION_PROJECT_LIMIT = 5;
+
+/**
+ * Folders that ran the most of the latest Claude Code and Codex sessions, for
+ * one-step picks in the add-project sources view. Existing projects stay in:
+ * picking one opens it, like adding any folder that is already a project.
+ * Ties keep the scan's newest-first order.
+ */
+export function selectFrequentSessionProjects<
+  T extends Pick<AgentSessionProjectCandidate, "recentThreadCount">,
+>(candidates: ReadonlyArray<T>): T[] {
+  return candidates
+    .filter((candidate) => (candidate.recentThreadCount ?? 0) > 0)
+    .toSorted((left, right) => (right.recentThreadCount ?? 0) - (left.recentThreadCount ?? 0))
+    .slice(0, FREQUENT_SESSION_PROJECT_LIMIT);
 }
 
 export function getCommandPaletteMode(input: {

@@ -11,6 +11,8 @@ import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import { Command, Flag } from "effect/cli";
 
+import branding from "../packages/contracts/src/branding.json" with { type: "json" };
+
 export interface NightlyReleaseMetadata {
   readonly baseVersion: string;
   readonly version: string;
@@ -117,7 +119,7 @@ export const resolveNightlyReleaseMetadata = (
     baseVersion,
     version,
     tag: `v${version}`,
-    name: `T3 Code ${CHANNEL_RELEASE_LABELS[channel]} ${version} (${shortSha})`,
+    name: `${branding.name} ${CHANNEL_RELEASE_LABELS[channel]} ${version} (${shortSha})`,
     shortSha,
   };
 };

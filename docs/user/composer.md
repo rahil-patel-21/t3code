@@ -51,12 +51,18 @@ See [images and videos](#images-and-videos-in-messages) for previewing and savin
 
 ## Send while the agent is working
 
-On web and desktop, choose **Settings → General → Follow-up behavior** to queue
-new messages for a later turn or steer the running turn immediately. The setting
-applies to this client; already queued messages keep their place. Queued messages
-are saved on the server and can be edited, reordered, or removed above the composer.
-`Cmd+Enter` on macOS or `Ctrl+Enter` on Windows and Linux uses the opposite action:
-it steers when your default is Queue and queues when your default is Steer.
+On web and desktop, a message sent during a running turn waits at the end of the
+conversation as a dashed bubble. It goes out on its own when the agent finishes its
+next tool call, or when the turn ends, even while you have another thread open. Use
+the arrow under the bubble to send it right away, or the pencil to move it back into
+the composer and edit it. Stop returns every queued message to the composer.
+
+Choose **Settings → General → Follow-up behavior** to **Queue** new messages for a
+later turn or **Steer** the running turn immediately. The setting applies to this
+client; messages already queued keep their place. Queued messages are saved on the
+server and can be edited, reordered, or removed above the composer. `Cmd+Enter` on
+macOS or `Ctrl+Enter` on Windows and Linux uses the opposite action: it steers when
+your default is Queue and queues when your default is Steer.
 
 Use `Cmd+Shift+Enter` on macOS or `Ctrl+Shift+Enter` on Windows and Linux to send
 the oldest queued message as a steer. This leaves the current draft intact and

@@ -1,6 +1,7 @@
 import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
+import { APP_BASE_NAME } from "@t3tools/contracts";
 import * as NetService from "@t3tools/shared/Net";
 import { SshPasswordPromptError } from "@t3tools/ssh/errors";
 import * as Effect from "effect/Effect";
@@ -30,7 +31,7 @@ describe("sshEnvironment", () => {
     assert.equal(cause.message, "Failed to present SSH password prompt for devbox.");
     assert.equal(
       DesktopSshEnvironment.toSshPasswordPromptError(cause).message,
-      "T3 Code window is not available for SSH authentication.",
+      `${APP_BASE_NAME} window is not available for SSH authentication.`,
     );
   });
 

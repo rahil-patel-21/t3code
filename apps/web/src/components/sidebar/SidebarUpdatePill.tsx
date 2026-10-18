@@ -184,11 +184,19 @@ async function installLocalUpdate(
   }
 }
 
-export function SidebarUpdatePill() {
-  return <SidebarUpdateControl />;
+/**
+ * The sidebar update button. With only a local app update it downloads, then
+ * installs. When other machines' servers or any providers are behind, one
+ * click updates everything: providers, then servers, then this app last. On
+ * web there is no local app, so the button shows only for remote updates.
+ * `rail`: stacked in the sidebar's icon rail, with its popups opening beside it.
+ */
+export function SidebarUpdatePill({ placement = "footer" }: { placement?: "footer" | "rail" }) {
+  return <SidebarUpdateControl placement={placement} />;
 }
 
-function SidebarUpdateControl() {
+function SidebarUpdateControl({ placement }: { placement: "footer" | "rail" }) {
+  const popupSide = placement === "rail" ? "right" : "top";
   const state = useDesktopUpdateState();
   const [isActionPending, setIsActionPending] = useState(false);
   const [isConfirmingEverything, setIsConfirmingEverything] = useState(false);
@@ -483,7 +491,7 @@ function SidebarUpdateControl() {
   );
 
   return (
-    <SidebarMenuItem className="ml-auto shrink-0">
+    <SidebarMenuItem className={cn("shrink-0", placement === "footer" && "ml-auto")}>
       <Popover
         handle={releaseNotesPopoverHandle}
         onOpenChange={(open, details) => {
@@ -517,7 +525,7 @@ function SidebarUpdateControl() {
           {!showReleaseNotesPopover ? (
             <TooltipPopup
               align="center"
-              side="top"
+              side={popupSide}
               variant={showUpdateDetails ? "glass" : "default"}
             >
               <span className="whitespace-pre-line">{tooltip}</span>
@@ -538,7 +546,7 @@ function SidebarUpdateControl() {
               }
             }}
             ref={releaseNotesPopupRef}
-            side="top"
+            side={popupSide}
             tooltipStyle
           >
             <SidebarUpdateReleaseNotes

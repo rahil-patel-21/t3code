@@ -20,6 +20,9 @@ import { beginAcpMockPrompt } from "./acpMockCancellationState.ts";
 const requestLogPath = process.env.T3_ACP_REQUEST_LOG_PATH;
 const exitLogPath = process.env.T3_ACP_EXIT_LOG_PATH;
 const antigravityProfile = process.env.T3_ACP_ANTIGRAVITY === "1";
+// MiniMax Code (`mcode acp` 0.5.5): no ACP auth method, no `models` block, and
+// models/permission/thinking-effort live in session config options only.
+const minimaxProfile = process.env.T3_ACP_MINIMAX === "1";
 const emitToolCalls = process.env.T3_ACP_EMIT_TOOL_CALLS === "1";
 const emitInterleavedAssistantToolCalls =
   process.env.T3_ACP_EMIT_INTERLEAVED_ASSISTANT_TOOL_CALLS === "1";
@@ -456,6 +459,95 @@ function modelState(): AcpCompat.SessionModelState {
   };
 }
 
+/* -------------------------------------------------------------------------- */
+/* MiniMax Code profile                                                        */
+/* -------------------------------------------------------------------------- */
+
+// Captured verbatim from `mcode acp` 0.5.5 `session/new`. Unlike every other
+// profile this agent sends no `models` block at all: the catalog is the `model`
+// config option, and `session/set_model` is not even a method it knows.
+const minimaxModels: ReadonlyArray<AcpSchema.SessionConfigSelectOption> = [
+  { value: "m:minimax:MiniMax-M3.1-Flash-Preview:v:", name: "M3.1-Flash-Preview" },
+  {
+    value: "m:minimax:MiniMax-M3.1-Flash-Preview:v:thinking",
+    name: "M3.1-Flash-Preview · thinking",
+  },
+  { value: "m:minimax:MiniMax-M3:v:", name: "M3" },
+  { value: "m:minimax:MiniMax-M3:v:thinking", name: "M3 · thinking" },
+];
+
+const minimaxPermissionValues: ReadonlyArray<AcpSchema.SessionConfigSelectOption> = [
+  { value: "default", name: "Ask" },
+  { value: "auto", name: "Auto" },
+  { value: "bypassPermissions", name: "Full access" },
+];
+
+const minimaxThinkingEffortValues: ReadonlyArray<AcpSchema.SessionConfigSelectOption> = [
+  { value: "default", name: "Default" },
+  { value: "low", name: "Low" },
+  { value: "medium", name: "Medium" },
+  { value: "high", name: "High" },
+  { value: "xhigh", name: "Xhigh" },
+  { value: "max", name: "Max" },
+];
+
+const minimaxModes: ReadonlyArray<AcpCompat.SessionMode> = [
+  {
+    id: "default",
+    name: "Default",
+    description: "Work normally with the configured tools and permission policy.",
+  },
+  {
+    id: "plan",
+    name: "Plan",
+    description: "Research and prepare an implementation plan before making changes.",
+  },
+];
+
+let minimaxPermissionMode = "bypassPermissions";
+let minimaxModelId = "m:minimax:MiniMax-M3.1-Flash-Preview:v:thinking";
+let minimaxThinkingEffort = "default";
+
+function minimaxConfigOptions(): ReadonlyArray<AcpSchema.SessionConfigOption> {
+  const options: Array<AcpSchema.SessionConfigOption> = [
+    {
+      type: "select",
+      configId: "permissionMode",
+      name: "Permission mode",
+      category: "_permission",
+      currentValue: minimaxPermissionMode,
+      options: minimaxPermissionValues.map((option) => ({ ...option })),
+      _meta: { "minimax-code/scope": "process" },
+    },
+    {
+      type: "select",
+      configId: "model",
+      name: "Model",
+      category: "model",
+      currentValue: minimaxModelId,
+      options: minimaxModels.map((option) => ({ ...option })),
+    },
+  ];
+  // The real CLI only advertises `thinkingEffort` while a thinking variant is
+  // selected, and rejects a write to it otherwise with -32602 "Thinking effort
+  // is not advertised for the selected model".
+  if (minimaxModelId.endsWith(":thinking")) {
+    options.push({
+      type: "select",
+      configId: "thinkingEffort",
+      name: "Thinking effort",
+      category: "thought_level",
+      currentValue: minimaxThinkingEffort,
+      options: minimaxThinkingEffortValues.map((option) => ({ ...option })),
+    });
+  }
+  return options;
+}
+
+function minimaxModeState(): AcpCompat.SessionModeState {
+  return { currentModeId: "default", availableModes: minimaxModes.map((mode) => ({ ...mode })) };
+}
+
 const program = Effect.gen(function* () {
   const agent = yield* EffectAcpAgent.AcpAgent;
   const resumeRelease = yield* Deferred.make<void>();
@@ -501,6 +593,21 @@ const program = Effect.gen(function* () {
         );
       }
       parameterizedModelPicker = request.capabilities?._meta?.parameterizedModelPicker === true;
+      if (minimaxProfile) {
+        return {
+          protocolVersion: 2,
+          info: { name: "minimax-code", title: "MiniMax Code", version: "0.5.5" },
+          // No `authMethods`: sign-in is `mcode login`, owned by the CLI.
+          capabilities: {
+            loadSession: true,
+            promptCapabilities: { image: false, audio: false, embeddedContext: false },
+            // `mcode acp` 0.6.2 advertises no `additionalDirectories` support and
+            // rejects the request that uses it.
+            session: { fork: {} },
+            ...(supportsV2Management ? { delete: {}, providers: {} } : {}),
+          },
+        };
+      }
       return {
         protocolVersion: 2,
         info: { name: "t3-acp-mock-agent", version: "0.0.0" },
@@ -532,6 +639,13 @@ const program = Effect.gen(function* () {
   // GEMINI_API_KEY from the process environment and rejects when it is missing.
   yield* agent.handleAuthenticate((request) =>
     Effect.gen(function* () {
+      // The real MiniMax Code agent answers -32602 for every method id, so a
+      // client that needs an ACP auth round-trip cannot start a session at all.
+      if (minimaxProfile) {
+        return yield* AcpError.AcpRequestError.invalidParams(
+          "Invalid params: Unknown authentication method.",
+        );
+      }
       if (antigravityProfile) {
         if (
           request.methodId !== "oauth-personal" &&
@@ -567,11 +681,31 @@ const program = Effect.gen(function* () {
     }
   });
 
-  yield* agent.handleCreateSession(() =>
+  yield* agent.handleCreateSession((request) =>
     Effect.gen(function* () {
       yield* requireAuthentication();
       if (antigravityProfile) {
         yield* publishAntigravityCommands(sessionId);
+      }
+      if (minimaxProfile) {
+        // `mcode acp` 0.6.2 answers `session/new` with -32602 "Additional
+        // directories are not supported by MiniMax Code ACP." whenever
+        // `additionalDirectories` is sent, so accepting it here would let a
+        // client ship a request the real CLI refuses and fail session open.
+        if (
+          Array.isArray(request.additionalDirectories) &&
+          request.additionalDirectories.length > 0
+        ) {
+          return yield* AcpError.AcpRequestError.invalidParams(
+            "Invalid params: Additional directories are not supported by MiniMax Code ACP.",
+          );
+        }
+        return {
+          sessionId,
+          modes: minimaxModeState(),
+          // No `models` block: the CLI sends no model state on this agent.
+          configOptions: minimaxConfigOptions(),
+        };
       }
       if (commandAdvertisementDelayMs >= 0) {
         yield* Effect.sleep(`${commandAdvertisementDelayMs} millis`).pipe(
@@ -620,6 +754,13 @@ const program = Effect.gen(function* () {
       }
       if (antigravityProfile) {
         yield* publishAntigravityCommands(request.sessionId);
+      }
+      if (minimaxProfile) {
+        return {
+          modes: minimaxModeState(),
+          configOptions: minimaxConfigOptions(),
+          _meta: { nativeResume: true },
+        };
       }
       return {
         modes: modeState(),
@@ -704,12 +845,91 @@ const program = Effect.gen(function* () {
           content: { type: "text", text: "replay" },
         },
       });
+      if (minimaxProfile) {
+        return {
+          modes: minimaxModeState(),
+          configOptions: minimaxConfigOptions(),
+        };
+      }
       return {
         configOptions: configOptions(),
       };
     }),
   );
 
+  if (!omitSessionListHandler) {
+    yield* agent.handleListSessions((request) =>
+      Effect.gen(function* () {
+        yield* requireAuthentication();
+        return {
+          sessions: [
+            {
+              sessionId,
+              cwd: request.cwd ?? process.cwd(),
+              title: "Mock session",
+              updatedAt: "1970-01-01T00:00:00.000Z",
+            },
+          ],
+        };
+      }),
+    );
+  }
+
+  yield* agent.handleForkSession((request) =>
+    Effect.gen(function* () {
+      yield* requireAuthentication();
+      return {
+        sessionId: `${request.sessionId}-fork`,
+        configOptions: configOptions(),
+      };
+    }),
+  );
+
+  yield* agent.handleCloseSession(() =>
+    Effect.gen(function* () {
+      yield* requireAuthentication();
+      return {};
+    }),
+  );
+
+  yield* agent.handleDeleteSession(() =>
+    Effect.gen(function* () {
+      yield* requireAuthentication();
+      return {};
+    }),
+  );
+
+  yield* agent.handleListProviders(() =>
+    Effect.gen(function* () {
+      yield* requireAuthentication();
+      return {
+        providers: [
+          {
+            providerId: "mock-provider",
+            supported: ["openai", "anthropic"],
+            required: false,
+            current: configuredProvider,
+          },
+        ],
+      };
+    }),
+  );
+
+  yield* agent.handleSetProvider((request) =>
+    Effect.gen(function* () {
+      yield* requireAuthentication();
+      configuredProvider = { apiType: request.apiType, baseUrl: request.baseUrl };
+      return {};
+    }),
+  );
+
+  yield* agent.handleDisableProvider(() =>
+    Effect.gen(function* () {
+      yield* requireAuthentication();
+      configuredProvider = null;
+      return {};
+    }),
+  );
   if (!omitSessionListHandler) {
     yield* agent.handleListSessions((request) =>
       Effect.gen(function* () {
@@ -799,6 +1019,30 @@ const program = Effect.gen(function* () {
             params: request,
           },
         );
+      }
+      if (minimaxProfile) {
+        if (typeof request.value !== "string") {
+          return yield* AcpError.AcpRequestError.invalidParams(
+            "Invalid params: expected a string value",
+            { method: "session/set_config_option", params: request },
+          );
+        }
+        if (request.configId === "permissionMode") {
+          minimaxPermissionMode = request.value;
+        }
+        if (request.configId === "model") {
+          minimaxModelId = request.value;
+        }
+        if (request.configId === "thinkingEffort") {
+          if (!minimaxModelId.endsWith(":thinking")) {
+            return yield* AcpError.AcpRequestError.invalidParams(
+              `Invalid params: Thinking effort is not advertised for the selected model: ${request.value}`,
+              { method: "session/set_config_option", params: request },
+            );
+          }
+          minimaxThinkingEffort = request.value;
+        }
+        return { configOptions: minimaxConfigOptions() };
       }
       if (request.configId === "mode" && typeof request.value === "string") {
         currentModeId = request.value;

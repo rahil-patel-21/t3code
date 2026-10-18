@@ -9,6 +9,7 @@ import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
+import { APP_BASE_NAME } from "@t3tools/contracts";
 import { buildRemoteNodeEnvScript } from "@t3tools/ssh/tunnel";
 import { satisfiesSemverRange } from "@t3tools/shared/semver";
 
@@ -440,7 +441,7 @@ const NODE_PTY_BINARY_MISSING_EXIT_CODE = 4;
 
 const formatNodePtyProbeFailureReason = (exitCode: number): string | null =>
   exitCode === NODE_PTY_BINARY_MISSING_EXIT_CODE
-    ? "WSL support is missing from this T3 Code build: the packaged Linux node-pty binary was not included. Install a build that includes WSL support."
+    ? `WSL support is missing from this ${APP_BASE_NAME} build: the packaged Linux node-pty binary was not included. Install a build that includes WSL support.`
     : null;
 
 // Captures the login-shell PATH as `resolvedPath:` so the launch can forward the

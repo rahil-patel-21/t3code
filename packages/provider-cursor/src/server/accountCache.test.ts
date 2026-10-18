@@ -10,6 +10,7 @@ const record = (timestampMs: number): UsageRecord => ({
   timestampMs,
   model: "claude-fable-5",
   sessionId: "conversation-1",
+  cwd: "",
   totals: {
     uncachedInputTokens: 0,
     cachedInputTokens: 0,

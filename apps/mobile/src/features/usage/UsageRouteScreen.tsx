@@ -14,6 +14,7 @@ import {
   isModelCostUnknown,
   type DailyTotals,
   type MergedUsage,
+  type ProjectTotals,
 } from "@t3tools/shared/usageMerge";
 import {
   enumerateDays,
@@ -351,6 +352,7 @@ export function UsageRouteScreen() {
                     <TotalsSection merged={merged} isPast24Hours={isPast24Hours} />
                     <CostSection merged={merged} />
                     <ModelsSection merged={merged} metric={metric} />
+                    <ProjectsSection merged={merged} />
                   </UsageUpdating>
                 </>
               )}
@@ -856,6 +858,56 @@ function ModelsSection(props: { readonly merged: MergedUsage; readonly metric: U
         </View>
       ))}
     </SettingsSection>
+  );
+}
+
+function ProjectsSection(props: { readonly merged: MergedUsage }) {
+  const { merged } = props;
+  if (merged.projects.length === 0) return null;
+
+  return (
+    <SettingsSection title="By project">
+      {merged.projects.map((project, index) => (
+        <BreakdownRow
+          key={project.project ?? ""}
+          first={index === 0}
+          label={project.project ?? "Unknown"}
+          totals={project}
+        />
+      ))}
+    </SettingsSection>
+  );
+}
+
+/** One project: its label, share of cost and tokens, then cost. */
+function BreakdownRow(props: {
+  readonly first: boolean;
+  readonly label: string;
+  readonly totals: ProjectTotals;
+}) {
+  const { totals } = props;
+  return (
+    <View
+      className={
+        props.first
+          ? "flex-row items-center gap-3 p-4"
+          : "flex-row items-center gap-3 border-t border-border-subtle p-4"
+      }
+    >
+      <View className="min-w-0 flex-1 gap-0.5">
+        <Text className="text-base text-foreground" numberOfLines={1} ellipsizeMode="middle">
+          {props.label}
+        </Text>
+        <Text className="text-sm text-foreground-muted">
+          {isModelCostUnknown(totals)
+            ? `no known rates · ${formatTokens(totals.totalTokens)} tokens`
+            : `${formatPercent(totals.costShare)} of cost · ${formatTokens(totals.totalTokens)} tokens`}
+        </Text>
+      </View>
+      <Text className="text-base tabular-nums text-foreground">
+        {isModelCostUnknown(totals) ? "Unpriced" : formatUsd(totals.costUsd)}
+      </Text>
+    </View>
   );
 }
 

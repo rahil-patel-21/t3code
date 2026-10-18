@@ -5,6 +5,7 @@ import {
   fileBreadcrumbChildren,
   fileBreadcrumbParent,
   fileBreadcrumbs,
+  hideGeneratedEntries,
   isListableHostFolder,
   joinHostPath,
   retainedBreadcrumbTrail,
@@ -188,5 +189,49 @@ describe("fileBreadcrumbParent", () => {
     ["", null],
   ])("returns the parent of %j", (path, expected) => {
     expect(fileBreadcrumbParent(path)).toBe(expected);
+  });
+});
+
+describe("hideGeneratedEntries", () => {
+  const visible = (entries: Parameters<typeof hideGeneratedEntries>[0]) =>
+    hideGeneratedEntries(entries).map((entry) => entry.path);
+
+  it("hides dependency and cache folders in any language, with or without a .gitignore", () => {
+    expect(
+      visible([
+        { path: "node_modules", kind: "directory" },
+        { path: "node_modules/react/index.js", kind: "file" },
+        { path: "apps/web/node_modules", kind: "directory", ignored: true },
+        { path: ".venv", kind: "directory" },
+        { path: "pkg/__pycache__", kind: "directory" },
+        { path: "demo.egg-info", kind: "directory" },
+        { path: "cmake-build-debug", kind: "directory" },
+        { path: ".DS_Store", kind: "file" },
+        { path: "src", kind: "directory" },
+        { path: "src/node_modules.ts", kind: "file" },
+      ]),
+    ).toEqual(["src", "src/node_modules.ts"]);
+  });
+
+  it("hides ambiguous output folders only when git ignores them", () => {
+    expect(
+      visible([
+        { path: "target", kind: "directory", ignored: true },
+        { path: "vendor", kind: "directory", ignored: true },
+        { path: "bin", kind: "directory" },
+        { path: "dist", kind: "directory" },
+      ]),
+    ).toEqual(["bin", "dist"]);
+  });
+
+  it("keeps ignored files and folders people open, such as .env and logs", () => {
+    expect(
+      visible([
+        { path: ".env", kind: "file", ignored: true },
+        { path: ".env.local", kind: "file", ignored: true },
+        { path: "logs", kind: "directory", ignored: true },
+        { path: ".plans", kind: "directory", ignored: true },
+      ]),
+    ).toEqual([".env", ".env.local", "logs", ".plans"]);
   });
 });

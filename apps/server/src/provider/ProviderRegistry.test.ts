@@ -19,6 +19,7 @@ import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 import * as CodexErrors from "effect-codex-app-server/errors";
 import {
+  APP_BASE_NAME,
   EnvironmentId,
   ClaudeSettings,
   CodexSettings,
@@ -3066,6 +3067,7 @@ it.layer(
               "codex",
               "cursor",
               "grok",
+              "minimaxCode",
               "muse",
               "opencode",
               "pi",
@@ -3089,7 +3091,7 @@ it.layer(
         assert.strictEqual(status.enabled, false);
         assert.strictEqual(status.status, "disabled");
         assert.strictEqual(status.installed, false);
-        assert.strictEqual(status.message, "Codex is disabled in T3 Code settings.");
+        assert.strictEqual(status.message, `Codex is disabled in ${APP_BASE_NAME} settings.`);
       }),
     );
   });

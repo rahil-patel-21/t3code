@@ -221,5 +221,23 @@ export function createProjectEnvironmentAtoms<R, E>(
             fileMetadata.refreshPath(environmentId, path, registry);
         }),
     }),
+    renameEntry: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:projects:rename-entry",
+      tag: WS_METHODS.projectsRenameEntry,
+      scheduler: fileScheduler,
+      concurrency: {
+        mode: "serial",
+        key: ({ environmentId, input }) => `${environmentId}:${input.cwd}`,
+      },
+    }),
+    deleteEntry: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:projects:delete-entry",
+      tag: WS_METHODS.projectsDeleteEntry,
+      scheduler: fileScheduler,
+      concurrency: {
+        mode: "serial",
+        key: ({ environmentId, input }) => `${environmentId}:${input.cwd}`,
+      },
+    }),
   };
 }

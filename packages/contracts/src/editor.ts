@@ -162,6 +162,9 @@ export const LaunchEditorInput = Schema.Struct({
       honored by the "file-manager" editor; clients must check the server's
       `shellRevealInFileManager` config flag before sending this. */
   reveal: Schema.optional(Schema.Boolean),
+  /** Open `cwd` in the default web browser instead of its default app (e.g.
+      HTML files). Only honored by the "file-manager" editor. */
+  browser: Schema.optional(Schema.Boolean),
 });
 export type LaunchEditorInput = typeof LaunchEditorInput.Type;
 

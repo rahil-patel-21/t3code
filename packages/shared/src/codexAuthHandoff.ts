@@ -1,4 +1,4 @@
-import { EnvironmentId, ProviderInstanceId } from "@t3tools/contracts";
+import { APP_BASE_NAME, EnvironmentId, ProviderInstanceId } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import { providerAuthReturnUrl } from "./providerAuthReturnUrl.ts";
 
@@ -116,7 +116,7 @@ export function codexAuthDeliveryUrl(input: CodexAuthHandoff, callbackUrl: strin
   const request = codexAuthorizationRequest(input.authorizationUrl);
   codexCallbackUrl(callbackUrl, request.redirectUri, request.state);
   const destination = providerAuthReturnUrl(input.returnUrl);
-  if (!destination) throw new Error("Invalid T3 Code return address.");
+  if (!destination) throw new Error(`Invalid ${APP_BASE_NAME} return address.`);
   const url = new URL(destination);
   const delivery = {
     environmentId: input.environmentId,

@@ -671,4 +671,88 @@ it.layer(layerTest, { excludeTestServices: true })("WorkspaceFileSystemLive", (i
       }),
     );
   });
+
+  describe("renameEntry / deleteEntry", () => {
+    it.effect("renames without overwriting and refuses to trash outside the root", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir;
+        yield* writeTextFile(cwd, "a.html", "a");
+        yield* writeTextFile(cwd, "b.html", "b");
+
+        const collision = yield* workspaceFileSystem
+          .renameEntry({ cwd, relativePath: "a.html", nextRelativePath: "b.html" })
+          .pipe(Effect.flip);
+        expect(collision._tag).toBe("WorkspaceFileSystemOperationError");
+        expect(yield* fileSystem.readFileString(path.join(cwd, "b.html"))).toBe("b");
+
+        yield* workspaceFileSystem.renameEntry({
+          cwd,
+          relativePath: "a.html",
+          nextRelativePath: "docs/c.html",
+        });
+        expect(yield* fileSystem.readFileString(path.join(cwd, "docs/c.html"))).toBe("a");
+
+        // Successful deletes go to the host's real Trash, so only the root guard is tested.
+        const escape = yield* workspaceFileSystem
+          .deleteEntry({ cwd, relativePath: ".." })
+          .pipe(Effect.flip);
+        expect(escape).toBeInstanceOf(WorkspacePaths.WorkspacePathOutsideRootError);
+        expect(yield* fileSystem.exists(cwd)).toBe(true);
+      }),
+    );
+
+    it.effect("allows case-only renames but never overwrites a distinct file", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir;
+        yield* writeTextFile(cwd, "page.html", "page");
+
+        yield* workspaceFileSystem.renameEntry({
+          cwd,
+          relativePath: "page.html",
+          nextRelativePath: "Page.html",
+        });
+        expect(yield* fileSystem.readDirectory(cwd)).toEqual(["Page.html"]);
+
+        // Only a case-sensitive filesystem can hold both spellings at once.
+        yield* writeTextFile(cwd, "page.html", "other");
+        if ((yield* fileSystem.readDirectory(cwd)).length === 2) {
+          const error = yield* workspaceFileSystem
+            .renameEntry({ cwd, relativePath: "page.html", nextRelativePath: "Page.html" })
+            .pipe(Effect.flip);
+          expect(error._tag).toBe("WorkspaceFileSystemOperationError");
+          expect(yield* fileSystem.readFileString(path.join(cwd, "Page.html"))).toBe("page");
+        }
+      }),
+    );
+
+    it.effect.skipIf(!symlinksSupported)(
+      "refuses to rename or trash through a symlink out of the root",
+      () =>
+        Effect.gen(function* () {
+          const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+          const fileSystem = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const cwd = yield* makeTempDir;
+          const outside = yield* makeTempDir;
+          yield* writeTextFile(outside, "secret.txt", "keep");
+          yield* fileSystem.symlink(outside, path.join(cwd, "link"));
+
+          const renameError = yield* workspaceFileSystem
+            .renameEntry({ cwd, relativePath: "link/secret.txt", nextRelativePath: "stolen.txt" })
+            .pipe(Effect.flip);
+          expect(renameError._tag).toBe("WorkspaceFilePathEscapeError");
+          const trashError = yield* workspaceFileSystem
+            .deleteEntry({ cwd, relativePath: "link/secret.txt" })
+            .pipe(Effect.flip);
+          expect(trashError._tag).toBe("WorkspaceFilePathEscapeError");
+          expect(yield* fileSystem.readFileString(path.join(outside, "secret.txt"))).toBe("keep");
+        }),
+    );
+  });
 });

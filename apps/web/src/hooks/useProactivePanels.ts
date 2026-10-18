@@ -182,7 +182,7 @@ export function useProactivePanels(input: {
     if (!panels.openProactive(threadRef, { id: "diff", kind: "diff" }, userActionRevision)) {
       return;
     }
-    useDiffPanelStore.getState().selectGitScope(threadRef, "branch");
+    useDiffPanelStore.getState().revealUncommitted(threadRef);
     onDiffPanelOpen?.();
   }, [
     activeLatestRun?.runId,

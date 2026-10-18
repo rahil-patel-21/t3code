@@ -76,6 +76,7 @@ import { PanelTabCloseButton } from "~/components/ui/panel-tab-close-button";
 import { faviconUrlForOrigin } from "~/lib/favicon";
 import { useTheme } from "~/hooks/useTheme";
 import { useDeviceState } from "~/state/device";
+import { APP_BASE_NAME } from "~/branding";
 import type { PreviewPanelInlineSize } from "~/hooks/usePreviewPanelInlineSize";
 import {
   newestPullRequestSummary,
@@ -118,6 +119,8 @@ interface RightPanelTabsProps {
   terminalLabelsById: ReadonlyMap<string, string>;
   onActivate: (surface: RightPanelSurface) => void;
   onRenameDevice?: (surfaceId: string, title: string) => void;
+  /** Names the terminal a terminal tab shows. An empty name gives it back its own. */
+  onRenameTerminal?: (terminalId: string, name: string) => void;
   onCloseSurface: (surface: RightPanelSurface) => void;
   onCloseOtherSurfaces: (surface: RightPanelSurface) => void;
   onCloseSurfacesToRight: (surface: RightPanelSurface) => void;
@@ -165,7 +168,7 @@ export function shouldOpenDefaultBrowserProfileFromMenuClick(
 }
 
 const SURFACE_DISABLED_REASONS = {
-  browser: "Browser previews are only available in the T3 Code desktop app.",
+  browser: `Browser previews are only available in the ${APP_BASE_NAME} desktop app.`,
   terminal: "Terminal surfaces are only available from a project thread.",
   files: "Files are only available when a project is open.",
   diff: "Diff is only available for server threads in Git repositories.",
@@ -790,6 +793,17 @@ function SortableTabList(props: {
   );
 }
 
+/** Device tabs and terminal tabs can be given a name of their own. */
+function canRenameSurface(
+  surface: RightPanelSurface,
+  props: Pick<RightPanelTabsProps, "onRenameDevice" | "onRenameTerminal">,
+): boolean {
+  return (
+    (surface.kind === "device" && props.onRenameDevice !== undefined) ||
+    (surface.kind === "terminal" && props.onRenameTerminal !== undefined)
+  );
+}
+
 interface RightPanelTabHandlers {
   onActivate: (surface: RightPanelSurface) => void;
   onClose: (surface: RightPanelSurface) => void;
@@ -884,8 +898,8 @@ function RightPanelTab(
       )}
       {props.renaming ? (
         <input
-          aria-label="Device tab name"
-          className="w-24 min-w-0 rounded-sm bg-background px-1 outline-none ring-1 ring-inset ring-ring"
+          aria-label={surface.kind === "terminal" ? "Terminal tab name" : "Device tab name"}
+          className="w-24 min-w-0 rounded-sm bg-background px-1 outline-none ring-1 ring-ring"
           defaultValue={title}
           ref={(element) => {
             element?.focus();
@@ -908,7 +922,7 @@ function RightPanelTab(
               <button
                 type="button"
                 onDoubleClick={() => {
-                  if (surface.kind === "device" && props.canRename) onStartRename(surface.id);
+                  if (props.canRename) onStartRename(surface.id);
                 }}
                 className="cursor-pointer flex min-w-0 items-center"
                 onClick={() => onActivate(surface)}
@@ -961,7 +975,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
   const { resolvedTheme } = useTheme();
   const tabListRef = useRef<HTMLDivElement>(null);
   const addSurfaceTriggerRef = useRef<HTMLButtonElement>(null);
-  const [renamingDevice, setRenamingDevice] = useState<string | null>(null);
+  const [renamingSurfaceId, setRenamingSurfaceId] = useState<string | null>(null);
   const [addSurfaceMenuOpen, setAddSurfaceMenuOpen] = useState(false);
   const [tabScrollState, setTabScrollState] = useState({
     hasOverflow: false,
@@ -1103,8 +1117,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
     if (surfaceIndex < 0) return;
 
     const items: ContextMenuItem<TabContextMenuAction>[] = [];
-    if (surface.kind === "device" && props.onRenameDevice)
-      items.push({ id: "rename", label: "Rename" });
+    if (canRenameSurface(surface, props)) items.push({ id: "rename", label: "Rename" });
     if (surface.kind === "file" && surface.attachment === undefined) {
       items.push({ id: "copy-path", label: "Copy path" });
     }
@@ -1142,7 +1155,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
     const action = await api.contextMenu.show(items, { x: event.clientX, y: event.clientY });
     switch (action) {
       case "rename":
-        setRenamingDevice(surface.id);
+        setRenamingSurfaceId(surface.id);
         break;
       case "copy-path":
         if (surface.kind === "file" && surface.attachment === undefined) {
@@ -1191,10 +1204,19 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       void handleTabContextMenu(event, surface);
     },
   );
-  const onStartRenameTab = useStableCallback((surfaceId: string) => setRenamingDevice(surfaceId));
+  const onStartRenameTab = useStableCallback((surfaceId: string) => setRenamingSurfaceId(surfaceId));
   const onFinishRenameTab = useStableCallback((surfaceId: string, title: string) => {
-    props.onRenameDevice?.(surfaceId, title);
-    setRenamingDevice(null);
+    const surface = props.surfaces.find((candidate) => candidate.id === surfaceId);
+    if (surface === undefined) return;
+    if (surface.kind !== "terminal") {
+      props.onRenameDevice?.(surfaceId, title);
+    } else if (
+      title.trim() !== surfaceTitle(surface, props.previewSessions, props.terminalLabelsById)
+    ) {
+      // The title already shown is no name of the terminal's own.
+      props.onRenameTerminal?.(surface.activeTerminalId, title);
+    }
+    setRenamingSurfaceId(null);
   });
 
   useEffect(() => {
@@ -1255,7 +1277,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       <div
         className={cn(
           "flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center gap-1 pl-2",
-          props.mode === "inline" && !props.layoutControls ? "pr-28" : "pr-3",
+          props.mode === "inline" && !props.layoutControls ? "pr-20" : "pr-3",
           ownsDesktopTitleBar && "drag-region",
           ownsDesktopTitleBar && "wco:pr-(--workspace-native-controls-inset)",
           props.mode === "inline" && props.maximized && COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
@@ -1283,7 +1305,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                   <RightPanelTab
                     key={surface.id}
                     surface={surface}
-                    dragDisabled={!props.onMoveSurface || renamingDevice === surface.id}
+                    dragDisabled={!props.onMoveSurface || renamingSurfaceId === surface.id}
                     active={surface.id === props.activeSurfaceId}
                     pending={props.pendingSurfaceIds.has(surface.id)}
                     title={surfaceTitle(surface, props.previewSessions, props.terminalLabelsById)}
@@ -1298,8 +1320,8 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                     theme={resolvedTheme}
                     environmentId={props.environmentId}
                     pullRequestStatusSeed={props.pullRequestStatusSeeds?.[surface.id]}
-                    renaming={renamingDevice === surface.id}
-                    canRename={props.onRenameDevice !== undefined}
+                    renaming={renamingSurfaceId === surface.id}
+                    canRename={canRenameSurface(surface, props)}
                     ownsDesktopTitleBar={ownsDesktopTitleBar}
                     onActivate={onActivateTab}
                     onClose={onCloseTab}
@@ -1433,7 +1455,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
         ) : null}
         {props.layoutControls}
         {ownsDesktopTitleBar && !props.layoutControls ? (
-          <span aria-hidden className="hidden w-24 shrink-0 wco:block" />
+          <span aria-hidden className="hidden w-16 shrink-0 wco:block" />
         ) : null}
         {ownsDesktopTitleBar ? (
           <span

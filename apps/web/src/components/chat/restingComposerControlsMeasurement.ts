@@ -66,9 +66,13 @@ function controlBlockWidths(block: HTMLElement): { natural: number; iconOnly: nu
 }
 
 /**
- * Both the composer (deciding which blocks move into overflow) and the
- * context strip (deciding whether its labels may expand) read the same
- * numbers, so neither decision depends on what the other one hid last render.
+ * Read the natural widths of the composer footer controls from the DOM, so
+ * deciding which blocks move into overflow never depends on what the last
+ * render hid.
+ *
+ * Hidden blocks and the unused overflow trigger stay mounted out of flow at
+ * full size. The picker is the one flexible item: its intended width is
+ * recovered from the truncated label.
  */
 export function measureRestingComposerControls(
   controls: HTMLElement,

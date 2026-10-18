@@ -4,6 +4,8 @@ import type {
   ServerProviderCompatibilityAdvisory,
 } from "@t3tools/contracts";
 
+import { APP_BASE_NAME } from "../../branding";
+
 export const PROVIDER_STATUS_STYLES = {
   disabled: {
     dot: "bg-muted-foreground/50",
@@ -32,7 +34,8 @@ export function getProviderSummary(provider: ServerProvider | undefined) {
     return {
       headline: "Disabled",
       detail:
-        provider.message ?? "This provider is installed but disabled for new sessions in T3 Code.",
+        provider.message ??
+        `This provider is installed but disabled for new sessions in ${APP_BASE_NAME}.`,
     };
   }
   if (!provider.installed) {

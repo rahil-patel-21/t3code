@@ -8,8 +8,11 @@ import {
 
 import type { ShareSegment } from "./UsageShareBar";
 
-export function sortModelsByTokens(models: readonly ModelTotals[]) {
-  return models.toSorted(
+/** Orders model or project rows for the Tokens view: most tokens first, then cost. */
+export function sortByTokens<
+  Row extends { readonly totalTokens: number; readonly costUsd: number },
+>(rows: readonly Row[]) {
+  return rows.toSorted(
     (left, right) => right.totalTokens - left.totalTokens || right.costUsd - left.costUsd,
   );
 }

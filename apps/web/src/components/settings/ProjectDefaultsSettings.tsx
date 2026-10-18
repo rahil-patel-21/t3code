@@ -18,7 +18,7 @@ import {
 } from "../../providerInstances";
 import { useEnvironmentProviders, useEnvironments } from "../../state/environments";
 import { EMPTY_SERVER_PROVIDERS } from "../../state/server";
-import { resolveEnvModeLabel, WORKTREE_SUBMODULES_LABELS } from "../BranchToolbar.logic";
+import { WORKTREE_SUBMODULES_LABELS } from "../BranchToolbar.logic";
 import { ProviderModelPicker } from "../chat/ProviderModelPicker";
 import { runtimeModeConfig, runtimeModeOptions } from "../chat/runtimeModeConfig";
 import { PULL_REQUEST_MERGE_METHOD_LABELS } from "../pullRequest/pullRequestDetail.logic";
@@ -79,7 +79,6 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
   const mixedModel = useScopedSettingsMixed(["defaultModelSelection"]);
   const mixedPermissions = useScopedSettingsMixed(["defaultRuntimeMode"]);
   const PermissionIcon = runtimeModeConfig[settings.defaultRuntimeMode].icon;
-  const mixedWorkspace = useScopedSettingsMixed(["defaultThreadEnvMode"]);
   const mixedSubmodules = useScopedSettingsMixed(["worktreeSubmodules"]);
   const mixedBrowser = useScopedSettingsMixed(["enableAgentBrowserAccess"]);
   const mixedAutoPull = useScopedSettingsMixed(["defaultAutoPull"]);
@@ -201,54 +200,6 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
       }
     />
   );
-  const workspaceRow = (
-    <SettingsRow
-      serverScoped
-      settingKeys={["defaultThreadEnvMode"]}
-      mixed={mixedWorkspace}
-      id={searchableSetting("new-threads").id}
-      title="Workspace"
-      description={
-        isProjectScope
-          ? "Where new threads in this project start."
-          : "Where new threads start. Projects and their t3.json can override it."
-      }
-      resetAction={
-        !isProjectScope && settings.defaultThreadEnvMode !== null ? (
-          <SettingResetButton
-            label="default workspace"
-            onClick={() => updateSettings({ defaultThreadEnvMode: null })}
-          />
-        ) : null
-      }
-      control={
-        <Select
-          value={mixedWorkspace ? null : (effective?.defaultThreadEnvMode ?? null)}
-          onValueChange={(value) => {
-            if (value === "local" || value === "worktree")
-              updateSettings({ defaultThreadEnvMode: value });
-          }}
-        >
-          <SelectTrigger size="sm" aria-label="Default workspace">
-            <SelectValue>
-              {(value: string | null) =>
-                value === "local" || value === "worktree"
-                  ? resolveEnvModeLabel(value)
-                  : unavailable
-                    ? "Unavailable"
-                    : "Mixed"
-              }
-            </SelectValue>
-          </SelectTrigger>
-          <SelectPopup align="end" alignItemWithTrigger={false}>
-            <SelectItem value="local">{resolveEnvModeLabel("local")}</SelectItem>
-            <SelectItem value="worktree">{resolveEnvModeLabel("worktree")}</SelectItem>
-          </SelectPopup>
-        </Select>
-      }
-    />
-  );
-
   return (
     <SettingsSection
       id={
@@ -267,10 +218,7 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
       }
     >
       {category === "project" ? (
-        <>
-          {modelRow}
-          {workspaceRow}
-        </>
+        <>{modelRow}</>
       ) : category === "general" ? (
         <>
           {modelRow}
@@ -335,7 +283,6 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
               </Select>
             }
           />
-          {workspaceRow}
           <SettingsRow
             serverScoped
             settingKeys={["worktreeSubmodules"]}

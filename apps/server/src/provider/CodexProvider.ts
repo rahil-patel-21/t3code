@@ -26,7 +26,11 @@ import type {
   ServerProviderModel,
   ServerProviderSkill,
 } from "@t3tools/contracts";
-import { PREFERRED_DEFAULT_CODEX_MODELS, ServerSettingsError } from "@t3tools/contracts";
+import {
+  APP_BASE_NAME,
+  PREFERRED_DEFAULT_CODEX_MODELS,
+  ServerSettingsError,
+} from "@t3tools/contracts";
 
 import {
   codexModelFamily,
@@ -394,8 +398,10 @@ export const codexAppServerEnvironment = (
 export function buildCodexInitializeParams(): CodexSchema.V1InitializeParams {
   return {
     clientInfo: {
+      // Codex reports `name` as the request originator; keep it stable across rebrands by
+      // naming the same constant the spawn-time originator override sends.
       name: CODEX_CLIENT_NAME,
-      title: CODEX_CLIENT_NAME,
+      title: APP_BASE_NAME,
       version: packageJson.version,
     },
     capabilities: {
@@ -558,7 +564,7 @@ const makePendingCodexProvider = (
           version: null,
           status: "warning",
           auth: { status: "unknown" },
-          message: "Codex is disabled in T3 Code settings.",
+          message: `Codex is disabled in ${APP_BASE_NAME} settings.`,
         },
       });
     }
@@ -649,7 +655,7 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
         version: null,
         status: "warning",
         auth: { status: "unknown" },
-        message: "Codex is disabled in T3 Code settings.",
+        message: `Codex is disabled in ${APP_BASE_NAME} settings.`,
       },
     });
   }

@@ -1,4 +1,4 @@
-import { ProviderSetupError, type CodexAuthCallbackInput } from "@t3tools/contracts";
+import { APP_BASE_NAME, ProviderSetupError, type CodexAuthCallbackInput } from "@t3tools/contracts";
 import { receiveCodexAuthCallback } from "@t3tools/shared/codexAuthCallback";
 import { codexAuthorizationRequest } from "@t3tools/shared/codexAuthHandoff";
 import { providerAuthReturnUrl } from "@t3tools/shared/providerAuthReturnUrl";
@@ -23,7 +23,9 @@ export function subscribeCodexAuthCallback(input: CodexAuthCallbackInput) {
           codexAuthorizationRequest(input.authorizationUrl);
           const destination = providerAuthReturnUrl(input.returnUrl);
           if (!destination || !isLoopbackHost(new URL(destination).hostname))
-            throw new Error("The local sign-in receiver needs a local T3 Code return address.");
+            throw new Error(
+              `The local sign-in receiver needs a local ${APP_BASE_NAME} return address.`,
+            );
           return destination;
         },
         catch: failure,

@@ -189,21 +189,12 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --inset-shadow-control-pressed: 0 1px rgb(0 0 0 / 8%);
   --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
   /* The composer's elevation: a soft drop pulled in under the surface, shared
-     by the composer, its context strip and attached banners. */
+     by the composer and attached banners. */
   --shadow-composer: 0 12px 28px -18px rgb(0 0 0 / 40%);
   --shadow-composer-dark: 0 14px 32px -18px rgb(0 0 0 / 75%);
-  /* Dark-mode shade where an attached surface meets the composer: 10px of
-     shadow fading away from the seam. Inline, so the offsets resolve on the
-     element. below: the context strip under the composer (1rem seam, faint
-     white fill). above: an attached banner over it (its tint on top). */
-  --background-image-composer-seam-below:
-    linear-gradient(
-      to bottom,
-      transparent 0 1rem,
-      rgb(0 0 0 / 18%) 1rem,
-      transparent calc(1rem + 10px)
-    ),
-    linear-gradient(rgb(255 255 255 / 1%), rgb(255 255 255 / 1%));
+  /* Dark-mode shade where an attached banner meets the composer: 10px of
+     shadow fading away from the seam, its tint on top. Inline, so the offsets
+     resolve on the element. */
   --background-image-composer-seam-above:
     linear-gradient(var(--chat-composer-attached-tint), var(--chat-composer-attached-tint)),
     linear-gradient(

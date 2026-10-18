@@ -30,6 +30,7 @@ import {
   type OrchestrationV2ProjectedTurnItem,
   type RunId,
 } from "@t3tools/contracts";
+import { parseClaudeTaskNotifications } from "@t3tools/client-runtime/claude-task-notifications";
 import { renderAssistantCitationsAsText } from "@t3tools/shared/assistantCitations";
 import { encodeComposerContextFragment } from "@t3tools/shared/composerContextClipboard";
 import { parseThreadLinkHref } from "@t3tools/shared/threadLinks";
@@ -191,6 +192,7 @@ import {
   collapsedWorkLogHeight,
   ThreadDisclosureChevron,
   THREAD_DISCLOSURE_TRANSITION_MS,
+  ThreadTaskNotificationRow,
   ThreadWorkGroupToggle,
   ThreadThinkingRow,
   ThreadWorkLog,
@@ -1129,6 +1131,39 @@ function renderFeedEntry(
 
   if (entry.type === "message") {
     const { message } = entry;
+    // Detected by text, so forks and copies of imported history render the same.
+    const taskNotifications =
+      message.role === "user" ? parseClaudeTaskNotifications(message.text) : null;
+    if (taskNotifications) {
+      return (
+        <View className="mb-5 gap-1">
+          {taskNotifications.map((notification, index) => (
+            <ThreadTaskNotificationRow
+              key={index}
+              rowSizing={props.workRowSizing}
+              iconSubtleColor={iconSubtleColor}
+              summary={notification.summary}
+              {...(notification.event ? { event: notification.event } : {})}
+              expanded={props.expandedWorkRows[entry.id] ?? false}
+              onToggle={() => props.onToggleWorkRow(entry.id)}
+            >
+              {notification.result ? (
+                <MarkdownImageAvailableWidthContext value={props.markdownContentWidth}>
+                  <AssistantMarkdownContent
+                    markdown={notification.result}
+                    environmentId={props.environmentId}
+                    markdownStyles={markdownStyles.assistant}
+                    linkHandlers={props.markdownLinkHandlers}
+                    renderImage={props.renderMarkdownImage}
+                    skills={props.skills}
+                  />
+                </MarkdownImageAvailableWidthContext>
+              ) : null}
+            </ThreadTaskNotificationRow>
+          ))}
+        </View>
+      );
+    }
     const isUser = message.role === "user";
     const presentation = resolveUserMessagePresentation(message);
     const renderedText = renderAssistantCitationsAsText(presentation.text);

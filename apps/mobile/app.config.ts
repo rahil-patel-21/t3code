@@ -1,4 +1,5 @@
 import type { ExpoConfig } from "expo/config";
+import branding from "@t3tools/contracts/branding.json" with { type: "json" };
 
 import { BRAND_ASSET_PATHS } from "../../scripts/lib/brand-assets.ts";
 import { loadRepoEnv } from "../../scripts/lib/public-config.ts";
@@ -71,7 +72,8 @@ const RELEASE_ASSETS = {
 
 const VARIANT_CONFIG = {
   development: {
-    appName: "T3 Code Dev",
+    nativeName: `${branding.name} Dev`,
+    displayName: `${branding.name} Dev`,
     scheme: "t3code-dev",
     iosBundleIdentifier: "com.t3tools.t3code.dev",
     androidPackage: "com.t3tools.t3code.dev",
@@ -79,7 +81,8 @@ const VARIANT_CONFIG = {
     assets: DEVELOPMENT_ASSETS,
   },
   preview: {
-    appName: "T3 Code Preview",
+    nativeName: `${branding.name} Preview`,
+    displayName: `${branding.name} Preview`,
     scheme: "t3code-preview",
     iosBundleIdentifier: "com.t3tools.t3code.preview",
     androidPackage: "com.t3tools.t3code.preview",
@@ -87,7 +90,8 @@ const VARIANT_CONFIG = {
     assets: PREVIEW_ASSETS,
   },
   production: {
-    appName: "T3 Code",
+    nativeName: branding.name,
+    displayName: branding.name,
     scheme: "t3code",
     iosBundleIdentifier: "com.t3tools.t3code",
     androidPackage: "com.t3tools.t3code",
@@ -132,7 +136,7 @@ const widgetsPlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
       {
         name: "SubscriptionUsage",
         displayName: "Subscription usage",
-        description: "Subscription quotas from your connected T3 Code environments.",
+        description: `Subscription quotas from your connected ${branding.name} environments.`,
         ios: {
           configuration: {
             title: "Subscription usage",
@@ -183,7 +187,7 @@ const widgetsPlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
       {
         name: "AgentActivity",
         displayName: "Agent Activity",
-        description: "Shows the current state of active T3 Code agents.",
+        description: `Shows the current state of active ${branding.name} agents.`,
         android: null,
         ios: { supportedFamilies: ["systemSmall", "systemMedium", "accessoryRectangular"] },
       },
@@ -217,12 +221,27 @@ const sharingPlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
   },
 ];
 
+const appDisplayNamePlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
+  "./plugins/withAppDisplayName.cjs",
+  {
+    displayName: variant.displayName,
+  },
+];
+
+const shareExtensionDisplayNamePlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
+  "./plugins/withShareExtensionDisplayName.cjs",
+  { displayName: variant.displayName },
+];
+
 // These aliases match the fonts' PostScript names on iOS. Register the same
 // names on Android so React Native and the native composer use one set of
 // family names without waiting for runtime font loading.
 
 const config: ExpoConfig = {
-  name: variant.appName,
+  // Prebuild names the Xcode project, scheme, and .app after `name`, and the
+  // mobile scripts build them by those names (ios/T3CodeDev.xcworkspace), so it
+  // stays fixed through a rebrand. withAppDisplayName applies displayName.
+  name: variant.nativeName,
   slug: "t3-code",
   platforms: ["ios", "android"],
   scheme: variant.scheme,
@@ -267,9 +286,8 @@ const config: ExpoConfig = {
       NSAppTransportSecurity: {
         NSAllowsArbitraryLoads: true,
       },
-      NSLocalNetworkUsageDescription:
-        "Allow T3 Code to connect to T3 Code servers on your local network or tailnet.",
-      NSPhotoLibraryAddUsageDescription: "Allow T3 Code to save images to your photo library.",
+      NSLocalNetworkUsageDescription: `Allow ${branding.name} to connect to ${branding.name} servers on your local network or tailnet.`,
+      NSPhotoLibraryAddUsageDescription: `Allow ${branding.name} to save images to your photo library.`,
       // "Audio, AirPlay, and Picture in Picture": the browser screen's system
       // picture in picture needs it to start and to stay up outside the app.
       UIBackgroundModes: ["audio"],
@@ -343,9 +361,10 @@ const config: ExpoConfig = {
     ],
     "expo-secure-store",
     "expo-sqlite",
+    appDisplayNamePlugin,
     ...(isIosPersonalTeamBuild
       ? [sharingPlugin]
-      : ["./plugins/withShareExtensionDisplayName.cjs", sharingPlugin]),
+      : [shareExtensionDisplayNamePlugin, sharingPlugin]),
     [
       "expo-notifications",
       {
@@ -377,7 +396,7 @@ const config: ExpoConfig = {
     [
       "expo-audio",
       {
-        microphonePermission: "Allow T3 Code to use your microphone for voice input.",
+        microphonePermission: `Allow ${branding.name} to use your microphone for voice input.`,
         recordAudioAndroid: false,
         enableBackgroundPlayback: false,
         enableBackgroundRecording: false,
@@ -386,7 +405,7 @@ const config: ExpoConfig = {
     [
       "expo-camera",
       {
-        cameraPermission: "Allow T3 Code to access your camera so you can scan pairing QR codes.",
+        cameraPermission: `Allow ${branding.name} to access your camera so you can scan pairing QR codes.`,
         microphonePermission: false,
         barcodeScannerEnabled: true,
         recordAudioAndroid: false,

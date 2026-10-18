@@ -1,3 +1,4 @@
+import { APP_BASE_NAME } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Console from "effect/Console";
 import * as Effect from "effect/Effect";
@@ -63,10 +64,10 @@ export function formatServiceStatus(
   cliVersion: string,
 ): string {
   if (!status.supported) {
-    return "T3 Code service\n  Status: unavailable on this machine\n  Supported on: Linux with systemd, macOS with launchd";
+    return `${APP_BASE_NAME} service\n  Status: unavailable on this machine\n  Supported on: Linux with systemd, macOS with launchd`;
   }
   if (!status.installed) {
-    return "T3 Code service\n  Status: not installed\n  Next: Run `t3 service install`.";
+    return `${APP_BASE_NAME} service\n  Status: not installed\n  Next: Run \`t3 service install\`.`;
   }
   const installedVersion = status.installedVersion ?? cliVersion;
   const problems = (status.problems ?? []).map(
@@ -78,7 +79,7 @@ export function formatServiceStatus(
     compareExactServiceVersions(status.installedVersion, cliVersion) > 0
   ) {
     return [
-      "T3 Code service",
+      `${APP_BASE_NAME} service`,
       `  Status: installed · t3@${installedVersion} (newer than this t3@${cliVersion} CLI)`,
       `  Unit: ${status.unitPath}`,
       `  Logs: ${status.logPath}`,
@@ -87,7 +88,7 @@ export function formatServiceStatus(
     ].join("\n");
   }
   return [
-    "T3 Code service",
+    `${APP_BASE_NAME} service`,
     `  Status: ${status.current ? `installed · t3@${installedVersion}` : "needs an update or repair"}`,
     `  Unit: ${status.unitPath}`,
     `  Logs: ${status.logPath}`,
@@ -114,7 +115,7 @@ const serviceReconcileFlags = {
 };
 
 const serviceInstallCommand = Command.make("install", serviceReconcileFlags).pipe(
-  Command.withDescription("Install T3 Code as a background service for this user."),
+  Command.withDescription(`Install ${APP_BASE_NAME} as a background service for this user.`),
   Command.withHandler((flags) =>
     runServiceCommand(
       flags,
@@ -122,12 +123,12 @@ const serviceInstallCommand = Command.make("install", serviceReconcileFlags).pip
         const result = yield* reconcileService({ allowDowngrade: flags.allowDowngrade });
         if (!result.changed) {
           yield* Console.log(
-            `T3 Code service is already installed with t3@${packageJson.version}.`,
+            `${APP_BASE_NAME} service is already installed with t3@${packageJson.version}.`,
           );
           return;
         }
         yield* Console.log(
-          `${result.previouslyInstalled ? "Updated" : "Installed"} T3 Code service with t3@${packageJson.version}.\nLogs: ${result.plan.logPath}`,
+          `${result.previouslyInstalled ? "Updated" : "Installed"} ${APP_BASE_NAME} service with t3@${packageJson.version}.\nLogs: ${result.plan.logPath}`,
         );
       }),
     ),
@@ -146,11 +147,13 @@ const serviceUpdateCommand = Command.make("update", serviceReconcileFlags).pipe(
         );
         const result = yield* reconcileService({ allowDowngrade: flags.allowDowngrade });
         if (!result.changed) {
-          yield* Console.log(`T3 Code service is already using t3@${packageJson.version}.`);
+          yield* Console.log(
+            `${APP_BASE_NAME} service is already using t3@${packageJson.version}.`,
+          );
           return;
         }
         yield* Console.log(
-          `${result.previouslyInstalled ? "Updated" : "Installed"} T3 Code service with t3@${packageJson.version}.\nLogs: ${result.plan.logPath}`,
+          `${result.previouslyInstalled ? "Updated" : "Installed"} ${APP_BASE_NAME} service with t3@${packageJson.version}.\nLogs: ${result.plan.logPath}`,
         );
       }),
     ),
@@ -170,8 +173,8 @@ const serviceRestartCommand = Command.make("restart", projectLocationFlags).pipe
         const restarted = yield* service.restart;
         yield* Console.log(
           restarted
-            ? `Restarted the T3 Code service${status.installedVersion === undefined ? "" : ` on t3@${status.installedVersion}`}.`
-            : "T3 Code service is not installed.",
+            ? `Restarted the ${APP_BASE_NAME} service${status.installedVersion === undefined ? "" : ` on t3@${status.installedVersion}`}.`
+            : `${APP_BASE_NAME} service is not installed.`,
         );
       }),
     ),
@@ -179,7 +182,7 @@ const serviceRestartCommand = Command.make("restart", projectLocationFlags).pipe
 );
 
 const serviceUninstallCommand = Command.make("uninstall", projectLocationFlags).pipe(
-  Command.withDescription("Stop and remove the T3 Code background service."),
+  Command.withDescription(`Stop and remove the ${APP_BASE_NAME} background service.`),
   Command.withHandler((flags) =>
     runServiceCommand(
       flags,
@@ -187,7 +190,9 @@ const serviceUninstallCommand = Command.make("uninstall", projectLocationFlags).
         const service = yield* BootService.BootService;
         const removed = yield* service.uninstall;
         yield* Console.log(
-          removed ? "Removed the T3 Code service." : "T3 Code service is not installed.",
+          removed
+            ? `Removed the ${APP_BASE_NAME} service.`
+            : `${APP_BASE_NAME} service is not installed.`,
         );
       }),
     ),
@@ -195,7 +200,7 @@ const serviceUninstallCommand = Command.make("uninstall", projectLocationFlags).
 );
 
 const serviceStatusCommand = Command.make("status", projectLocationFlags).pipe(
-  Command.withDescription("Show whether the T3 Code background service is installed."),
+  Command.withDescription(`Show whether the ${APP_BASE_NAME} background service is installed.`),
   Command.withHandler((flags) =>
     runServiceCommand(
       flags,
@@ -215,7 +220,9 @@ export const offerServiceDuringOnboarding = Effect.gen(function* () {
     return false;
   }
   if (installed && current) {
-    yield* Console.log("T3 Code is already set up to run in the background on this machine.");
+    yield* Console.log(
+      `${APP_BASE_NAME} is already set up to run in the background on this machine.`,
+    );
     return true;
   }
   for (const problem of status.problems ?? []) {
@@ -235,11 +242,11 @@ export const offerServiceDuringOnboarding = Effect.gen(function* () {
   const wanted = yield* Prompt.run(
     Prompt.Confirm({
       message: installed
-        ? "The installed T3 Code service needs an update or repair. Update it now?"
+        ? `The installed ${APP_BASE_NAME} service needs an update or repair. Update it now?`
         : platform === "darwin"
-          ? "Run T3 Code in the background whenever you log in to this Mac? " +
+          ? `Run ${APP_BASE_NAME} in the background whenever you log in to this Mac? ` +
             "It stays reachable through T3 Connect while you are logged in."
-          : "Run T3 Code in the background whenever this machine boots? " +
+          : `Run ${APP_BASE_NAME} in the background whenever this machine boots? ` +
             "It stays reachable through T3 Connect even after you log out.",
       initial: true,
     }),
@@ -278,7 +285,7 @@ export const recoverServiceOnboardingOffer = <R>(
   );
 
 export const serviceCommand = Command.make("service").pipe(
-  Command.withDescription("Manage the T3 Code background service."),
+  Command.withDescription(`Manage the ${APP_BASE_NAME} background service.`),
   Command.withSubcommands([
     serviceInstallCommand,
     serviceRestartCommand,

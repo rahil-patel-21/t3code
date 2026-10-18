@@ -20,6 +20,7 @@ import * as HostProcess from "@t3tools/shared/HostProcess";
 import { clerkFrontendApiHostnameFromPublishableKey } from "@t3tools/shared/relayAuth";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
 import rootPackageJson from "../package.json" with { type: "json" };
+import branding from "../packages/contracts/src/branding.json" with { type: "json" };
 import desktopPackageJson from "../apps/desktop/package.json" with { type: "json" };
 import gnomeCaptureBundle from "../apps/desktop/gnome-extension/bundle.json" with { type: "json" };
 import serverPackageJson from "../apps/server/package.json" with { type: "json" };
@@ -31,6 +32,7 @@ import {
   type WebAssetBrand,
 } from "./lib/brand-assets.ts";
 import { getDefaultBuildArch } from "./lib/build-target-arch.ts";
+import { prewarmElectronArchive } from "./lib/electron-archive-cache.ts";
 import {
   findInlinedExternalPackages,
   selectCliRuntimeExternalDependencies,
@@ -42,6 +44,7 @@ import { resolveCatalogDependencies } from "./lib/resolve-catalog.ts";
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Config from "effect/Config";
+import * as Cause from "effect/Cause";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -61,6 +64,13 @@ const APPLE_TEAM_ID_PATTERN = /^[A-Z0-9]{10}$/u;
 
 const BuildPlatform = Schema.Literals(["mac", "linux", "win"]);
 const BuildArch = Schema.Literals(["arm64", "x64", "universal"]);
+
+/** electron-builder's platform names differ from ours only for macOS. */
+const ELECTRON_DOWNLOAD_PLATFORM = {
+  mac: "darwin",
+  linux: "linux",
+  win: "win32",
+} as const satisfies Record<typeof BuildPlatform.Type, "darwin" | "linux" | "win32">;
 
 const WorkspaceConfig = Schema.Struct({
   catalog: Schema.optional(Schema.Record(Schema.String, Schema.String)),
@@ -2669,10 +2679,13 @@ export function resolvePackageManagerUserAgent(packageManager: string): string {
   return `${trimmed.slice(0, versionSeparator)}/${trimmed.slice(versionSeparator + 1)}`;
 }
 
+// Names the app bundle, executable, shortcuts, installer UI, and the .deb's /opt
+// directory. Update feeds (artifactName), the per-user Windows install directory
+// (package name), and the runtime userData path do not derive from it.
 export function resolveDesktopProductName(version: string): string {
   return resolveDesktopUpdateChannel(version) === "nightly"
-    ? "T3 Code (Nightly)"
-    : (desktopPackageJson.productName ?? "T3 Code");
+    ? `${branding.name} (Nightly)`
+    : `${branding.name} (Beta)`;
 }
 
 export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
@@ -2746,10 +2759,8 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       extendInfo: {
         // macOS 26 offers Messages/Mail codes in every text field unless opted out.
         NSAutoFillRequiresTextContentTypeForOneTimeCodeOnMac: true,
-        NSLocalNetworkUsageDescription:
-          "T3 Code connects to devices on your local network for remote environments and commands run by terminals and coding agents.",
-        NSScreenCaptureUsageDescription:
-          "T3 Code captures the active window when you use the window capture shortcut.",
+        NSLocalNetworkUsageDescription: `${branding.name} connects to devices on your local network for remote environments and commands run by terminals and coding agents.`,
+        NSScreenCaptureUsageDescription: `${branding.name} captures the active window when you use the window capture shortcut.`,
         // macOS lists an app under Default web browser only when it opens web
         // pages as documents as well as http and https links (see protocols).
         CFBundleDocumentTypes: [
@@ -2763,7 +2774,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       },
       protocols: [
         {
-          name: "T3 Code",
+          name: branding.name,
           schemes: ["t3code", "t3code-dev"],
         },
         {
@@ -2820,7 +2831,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       maintainer: "T3 Tools <hello@t3.codes>",
       protocols: [
         {
-          name: "T3 Code",
+          name: branding.name,
           schemes: ["t3code", "t3code-dev"],
         },
       ],
@@ -3742,8 +3753,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     ...(macWebAuthn ? { t3codeWebAuthn: macWebAuthn } : {}),
     private: true,
     packageManager: rootPackageJson.packageManager,
-    description:
-      "T3 Code is an open-source desktop app for coding agents. Work with your existing agent subscriptions, review code changes, and run commands in your projects. Connect from desktop, web, or mobile to continue working remotely.",
+    description: `${branding.name} desktop build`,
     license: "MIT",
     homepage: "https://t3.codes",
     author: "T3 Tools",
@@ -3882,6 +3892,28 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   yield* Effect.log(
     `[desktop-artifact] Building ${options.platform}/${options.target} (arch=${options.arch}, version=${appVersion})...`,
   );
+
+  // electron-builder fetches Electron through @electron/get, which caps one request at ten
+  // minutes. A ~130MB archive on a slow link cannot finish inside that, so the build fails
+  // after burning the full window with "Timeout awaiting 'request'". Populate the cache first
+  // with a resumable fetch, and electron-builder takes the cache-hit path instead.
+  //
+  // Best effort: a pre-fetch that cannot run must never be the reason a build stops, since
+  // electron-builder still does its own download.
+  if (!options.skipBuild) {
+    yield* prewarmElectronArchive({
+      version: electronVersion,
+      platform: ELECTRON_DOWNLOAD_PLATFORM[options.platform],
+      arch: options.arch === "universal" ? "x64" : options.arch,
+    }).pipe(
+      Effect.catchCause((cause) =>
+        Effect.logWarning(
+          `[desktop-artifact] Electron pre-fetch skipped, deferring to electron-builder: ${Cause.pretty(cause)}`,
+        ),
+      ),
+    );
+  }
+
   const builderArgs = [
     "exec",
     "--filter",
@@ -4017,7 +4049,7 @@ const buildDesktopArtifactCli = Command.make("build-desktop-artifact", {
     Flag.optional,
   ),
 }).pipe(
-  Command.withDescription("Build a desktop artifact for T3 Code."),
+  Command.withDescription(`Build a desktop artifact for ${branding.name}.`),
   Command.withHandler((input) => Effect.flatMap(resolveBuildOptions(input), buildDesktopArtifact)),
 );
 

@@ -67,10 +67,9 @@ describe("composer menu focus", () => {
 
 describe("composer event scopes", () => {
   it.each([
-    '<div data-chat-composer-resting-controls="true"><button data-target></button></div>',
     "<div data-composer-context-control><button data-target></button></div>",
     '<div data-chat-composer-resting-images="true"><img data-target /></div>',
-  ])("recognizes events from resting composer controls in %s", (html) => {
+  ])("recognizes events from the workspace and branch controls in %s", (html) => {
     expect(isInsideRestingComposerControlScope(elementInside(html))).toBe(true);
   });
 

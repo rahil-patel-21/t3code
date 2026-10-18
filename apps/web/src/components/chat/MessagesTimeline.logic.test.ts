@@ -35,15 +35,9 @@ import {
   normalizeCompactToolLabel,
   resolveAssistantMessageCopyState,
   resolveTimelineIsAtEnd,
-  resolveTimelineMinimapHasPersistentGutter,
-  resolveTimelineMinimapHeightStyle,
-  resolveTimelineMinimapHitStripWidth,
-  resolveTimelineMinimapIndexFromPointer,
-  resolveTimelineMinimapInteractiveWidth,
-  resolveTimelineMinimapNavigationInteractive,
-  resolveTimelineMinimapTopPercent,
   resolveWorkGroupScrollIndex,
   shouldFollowWorkGroupAppend,
+  shouldCollapseAssistantMessage,
   threadReadLabelPrefix,
   threadReadTargetId,
   threadReadTargetTitle,
@@ -399,6 +393,22 @@ describe("shouldPreserveAssistantLineBreaks", () => {
       ),
     ).toBe(true);
     expect(shouldPreserveAssistantLineBreaks("A normal\\nmarkdown paragraph")).toBe(false);
+  });
+});
+
+describe("shouldCollapseAssistantMessage", () => {
+  const lines = (count: number) =>
+    Array.from({ length: count }, (_, index) => `Line ${index + 1}`).join("\n\n");
+
+  it("collapses responses past ten written lines or 1200 characters", () => {
+    expect(shouldCollapseAssistantMessage(lines(10))).toBe(false);
+    expect(shouldCollapseAssistantMessage(lines(11))).toBe(true);
+    expect(shouldCollapseAssistantMessage("word ".repeat(250))).toBe(true);
+  });
+
+  it("does not count link targets that render as short chips", () => {
+    const fileLink = `[run.sh](/Users/someone/projects/app/${"nested/".repeat(20)}run.sh)`;
+    expect(shouldCollapseAssistantMessage(`${fileLink} `.repeat(12))).toBe(false);
   });
 });
 
@@ -5503,42 +5513,5 @@ describe("timeline end and minimap geometry", () => {
     ).toBe(false);
     expect(resolveTimelineIsAtEnd({ isNearEnd: true, isAtEnd: false })).toBe(false);
     expect(resolveTimelineIsAtEnd({ isAtEnd: false })).toBe(false);
-  });
-
-  it("maps the minimap rail to rows and sizes its hit strip from the free gutter", () => {
-    expect(resolveTimelineMinimapHeightStyle(5)).toBe("min(32px, calc(100vh - 18rem))");
-    expect(resolveTimelineMinimapTopPercent(2, 5)).toBe(50);
-    const rail = { itemCount: 101, railTop: 100, railHeight: 500 };
-    expect(resolveTimelineMinimapIndexFromPointer({ ...rail, pointerY: 350 })).toBe(50);
-    expect(resolveTimelineMinimapIndexFromPointer({ ...rail, pointerY: 999 })).toBe(100);
-
-    expect(resolveTimelineMinimapHasPersistentGutter(832, 768)).toBe(false);
-    expect(resolveTimelineMinimapHasPersistentGutter(863, 768)).toBe(false);
-    expect(resolveTimelineMinimapHasPersistentGutter(864, 768)).toBe(true);
-    expect(resolveTimelineMinimapHasPersistentGutter(1400, 1152)).toBe(true);
-    expect(resolveTimelineMinimapHasPersistentGutter(1200, 1152)).toBe(false);
-    expect(resolveTimelineMinimapHasPersistentGutter(2560, 2560)).toBe(false);
-
-    expect(resolveTimelineMinimapHitStripWidth(768, 768)).toBe(0);
-    expect(resolveTimelineMinimapHitStripWidth(792, 768)).toBe(0);
-    expect(resolveTimelineMinimapHitStripWidth(820, 768)).toBe(14);
-    expect(resolveTimelineMinimapHitStripWidth(872, 768)).toBe(40);
-    expect(resolveTimelineMinimapHitStripWidth(1400, 768)).toBe(40);
-    expect(resolveTimelineMinimapHitStripWidth(2560, 2560)).toBe(0);
-    expect(resolveTimelineMinimapHitStripWidth(1204, 1152)).toBe(14);
-    expect(resolveTimelineMinimapHitStripWidth(0, 0)).toBe(0);
-    expect(resolveTimelineMinimapHitStripWidth(Number.NaN, 768)).toBe(0);
-
-    expect(resolveTimelineMinimapNavigationInteractive(40)).toBe(true);
-    expect(resolveTimelineMinimapNavigationInteractive(14)).toBe(true);
-    expect(resolveTimelineMinimapNavigationInteractive(8)).toBe(false);
-    expect(resolveTimelineMinimapNavigationInteractive(0)).toBe(false);
-
-    expect(resolveTimelineMinimapInteractiveWidth(0, false)).toBe(0);
-    expect(resolveTimelineMinimapInteractiveWidth(14, false)).toBe(14);
-    expect(resolveTimelineMinimapInteractiveWidth(40, false)).toBe(40);
-    for (const width of [0, 14, 40]) {
-      expect(resolveTimelineMinimapInteractiveWidth(width, true)).toBe("22rem");
-    }
   });
 });

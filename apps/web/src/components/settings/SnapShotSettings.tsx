@@ -12,6 +12,7 @@ import { settlePromise } from "@t3tools/client-runtime/state/runtime";
 import * as Cause from "effect/Cause";
 import { useEffect, useRef, useState } from "react";
 
+import { APP_BASE_NAME } from "../../branding";
 import { useStableCallback } from "../../hooks/useStableCallback";
 import { useClientSettings, useUpdateClientSettings } from "../../hooks/useSettings";
 import { getDesktopSnapShotBridge } from "../../lib/desktopSnapShot";
@@ -292,7 +293,7 @@ export function SnapShotSettings() {
   const shortcutStatus = recording
     ? "Press your shortcut. Esc cancels."
     : candidateConflict
-      ? `T3 Code already uses this for "${commandLabel(candidateConflict)}".`
+      ? `${APP_BASE_NAME} already uses this for "${commandLabel(candidateConflict)}".`
       : shortcutCheck.status === "checking"
         ? "Checking shortcut…"
         : shortcutCheck.availability
@@ -342,7 +343,8 @@ export function SnapShotSettings() {
     const verified = await settlePromise(async () => {
       if (state?.macPermissions) {
         saveSnapShotSetupResume(wizard?.wasEnabled ?? settings.snapShotEnabled);
-        if (!bridge?.setupSnapShot) throw new Error("Restart T3 Code to finish capture setup.");
+        if (!bridge?.setupSnapShot)
+          throw new Error(`Restart ${APP_BASE_NAME} to finish capture setup.`);
         await bridge.setupSnapShot("test-mac-capture");
       }
       if (state?.mode === "direct")

@@ -1,3 +1,5 @@
+import { APP_BASE_NAME } from "@t3tools/contracts";
+
 import type { PinnedRuntimeProgress } from "../cloud/pinnedRuntime.ts";
 
 export function createUpdateProgress(
@@ -39,7 +41,7 @@ export function createUpdateProgress(
         const labels = {
           download: "Downloading...",
           verify: "Verifying the download...",
-          extract: "Extracting T3 Code...",
+          extract: `Extracting ${APP_BASE_NAME}...`,
           validate: "Checking the new executable...",
           cached: "Using the downloaded release...",
         };

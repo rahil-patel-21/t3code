@@ -73,6 +73,24 @@ describe("buildFileContextMenuItems", () => {
     expect(openWith.children?.map((child) => child.id)).toEqual(["editor:vscode", "editor:cursor"]);
   });
 
+  it("offers the default browser under open-with for browser-openable files", () => {
+    const capabilities = {
+      revealLabel: undefined,
+      canOpenDefault: true,
+      editorIds: ["file-manager"] as const,
+    };
+    const items = buildFileContextMenuItems({
+      hasAbsolutePath: true,
+      capabilities,
+      openableInBrowser: true,
+    });
+
+    expect(items.at(-1)?.children?.map((child) => child.id)).toEqual(["open-in-browser"]);
+    expect(
+      buildFileContextMenuItems({ hasAbsolutePath: true, capabilities }).map((item) => item.id),
+    ).toEqual(["open"]);
+  });
+
   it("offers only the reveal item when just reveal is enabled", () => {
     const items = buildFileContextMenuItems({
       hasAbsolutePath: true,

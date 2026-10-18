@@ -103,7 +103,9 @@ import {
   WsRpcGroup,
 } from "@t3tools/contracts";
 import { resolveServerBackgroundActivitySettings } from "@t3tools/shared/backgroundActivitySettings";
+import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import {
+  HttpClient,
   HttpRouter,
   HttpServerRequest,
   HttpServerRespondable,
@@ -111,6 +113,8 @@ import {
 } from "effect/http";
 import { RpcSerialization, RpcServer } from "effect/rpc";
 
+import { executeApiGatewayRequest } from "./apiGateway/ApiGatewayExecutor.ts";
+import * as ApiGatewayWorkspaceStore from "./apiGateway/ApiGatewayWorkspaceStore.ts";
 import * as CheckpointDiffQuery from "./checkpointing/CheckpointDiffQuery.ts";
 import * as ServerConfig from "./config.ts";
 import * as EnvironmentTheme from "./environmentTheme.ts";
@@ -1304,6 +1308,8 @@ const layerWsRpc = (
       const processResourceMonitor = yield* ProcessResourceMonitor.ProcessResourceMonitor;
       const resourceTelemetry = yield* ResourceTelemetry.ResourceTelemetry;
       const relayClient = yield* RelayClient.RelayClient;
+      const apiGatewayWorkspace = yield* ApiGatewayWorkspaceStore.ApiGatewayWorkspaceStore;
+      const httpClient = yield* HttpClient.HttpClient;
       // A webhook URL starts agent runs, so only sessions that may operate
       // see it; read-only sessions still see the task itself.
       const withVisibleWebhookUrls = (result: ScheduledTaskListResult): ScheduledTaskListResult =>
@@ -2668,6 +2674,30 @@ const layerWsRpc = (
                 }),
             ),
           ),
+        [WS_METHODS.projectsRenameEntry]: (input) =>
+          workspaceFileSystem.renameEntry(input).pipe(
+            Effect.mapError(
+              (cause) =>
+                new ProjectWriteFileError({
+                  cwd: input.cwd,
+                  relativePath: input.relativePath,
+                  ...projectFileFailureContext(cause),
+                  cause,
+                }),
+            ),
+          ),
+        [WS_METHODS.projectsDeleteEntry]: (input) =>
+          workspaceFileSystem.deleteEntry(input).pipe(
+            Effect.mapError(
+              (cause) =>
+                new ProjectWriteFileError({
+                  cwd: input.cwd,
+                  relativePath: input.relativePath,
+                  ...projectFileFailureContext(cause),
+                  cause,
+                }),
+            ),
+          ),
         [WS_METHODS.shellOpenInEditor]: (input) => externalLauncher.launchEditor(input),
         [WS_METHODS.filesystemGetMetadata]: (input) => workspaceFileSystem.getMetadata(input),
         [WS_METHODS.filesystemBrowse]: (input) =>
@@ -2686,6 +2716,8 @@ const layerWsRpc = (
         [WS_METHODS.agentSessionsScan]: () => agentSessionScanner.scan,
         [WS_METHODS.agentSessionsImport]: (input) =>
           agentSessionImporter.importRecentAgentThreads(input),
+        [WS_METHODS.agentSessionsListProjectSessions]: (input) =>
+          agentSessionImporter.listProjectAgentSessions(input),
         [WS_METHODS.assetsCreateUrl]: (input) =>
           Effect.gen(function* () {
             const path = yield* Path.Path;
@@ -2777,6 +2809,8 @@ const layerWsRpc = (
             .cancel(input.threadId)
             .pipe(Effect.map((cancelled) => ({ cancelled }))),
         [WS_METHODS.vcsRefreshStatus]: (input) => vcsStatusBroadcaster.refreshStatus(input.cwd),
+        [WS_METHODS.vcsRefreshLocalStatus]: (input) =>
+          vcsStatusBroadcaster.refreshLocalStatus(input.cwd),
         [WS_METHODS.vcsPull]: (input) =>
           gitWorkflow.pullCurrentBranch(input.cwd).pipe(
             Effect.matchCauseEffect({
@@ -3091,6 +3125,17 @@ const layerWsRpc = (
         [WS_METHODS.subscribeResourceTelemetry]: (_input) =>
           Stream.unwrap(
             Effect.map(resourceTelemetry.subscribe, ({ latest, changes }) =>
+              Stream.concat(Stream.make(latest), changes),
+            ),
+          ),
+        [WS_METHODS.apiGatewayExecute]: (input) =>
+          executeApiGatewayRequest(input).pipe(
+            Effect.provideService(HttpClient.HttpClient, httpClient),
+          ),
+        [WS_METHODS.apiGatewayApply]: (input) => apiGatewayWorkspace.apply(input.operations),
+        [WS_METHODS.subscribeApiGateway]: (_input) =>
+          Stream.unwrap(
+            Effect.map(apiGatewayWorkspace.subscribe, ({ latest, changes }) =>
               Stream.concat(Stream.make(latest), changes),
             ),
           ),

@@ -7,6 +7,7 @@ import { playwright } from "vite-plus/test/browser-playwright";
 import { defineProject, type TestProjectInlineConfiguration } from "vite-plus/test/config";
 import "vite-plus/test/config";
 import { defineConfig, type Connect, type Plugin } from "vite-plus";
+import branding from "@t3tools/contracts/branding.json" with { type: "json" };
 import * as Hash from "effect/Hash";
 import pkg from "./package.json" with { type: "json" };
 
@@ -216,6 +217,9 @@ export default defineConfig(() => {
       "import.meta.env.VITE_HOSTED_APP_URL": JSON.stringify(configuredHostedAppUrl ?? ""),
       "import.meta.env.VITE_HOSTED_APP_CHANNEL": JSON.stringify(configuredHostedAppChannel),
       "import.meta.env.APP_VERSION": JSON.stringify(configuredAppVersion),
+      // Also fills %APP_BASE_NAME% in index.html. Runtime UI reads ~/branding,
+      // which honors the name the desktop app injects.
+      "import.meta.env.APP_BASE_NAME": JSON.stringify(branding.name),
     },
     resolve: {
       tsconfigPaths: true,

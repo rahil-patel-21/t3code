@@ -19,6 +19,7 @@ describe("terminalUiStateStore actions", () => {
     useTerminalUiStateStore.setState({
       terminalUiStateByThreadKey: {},
       suppressedTerminalIdsByThreadKey: {},
+      terminalNamesByThreadKey: {},
     });
   });
 
@@ -292,5 +293,64 @@ describe("terminalUiStateStore actions", () => {
     store.clearTerminalUiState(THREAD_REF);
 
     expect(useTerminalUiStateStore.getState()).toBe(before);
+  });
+});
+
+describe("terminal names", () => {
+  const names = (threadRef = THREAD_REF) =>
+    useTerminalUiStateStore.getState().terminalNamesByThreadKey[scopedThreadKey(threadRef)];
+
+  beforeEach(() => {
+    useTerminalUiStateStore.setState({
+      terminalUiStateByThreadKey: {},
+      suppressedTerminalIdsByThreadKey: {},
+      terminalNamesByThreadKey: {},
+    });
+    const store = useTerminalUiStateStore.getState();
+    store.setTerminalOpen(THREAD_REF, true);
+    store.newTerminal(THREAD_REF, "term-2");
+  });
+
+  it("names a terminal per thread, and an empty name gives it back its own", () => {
+    const store = useTerminalUiStateStore.getState();
+    store.renameTerminal(THREAD_REF, "term-2", "  dev server  ");
+    expect(names()).toEqual({ "term-2": "dev server" });
+    expect(names(OTHER_THREAD_REF)).toBeUndefined();
+
+    store.renameTerminal(THREAD_REF, "term-2", " ");
+    expect(names()).toBeUndefined();
+  });
+
+  it("forgets the name when the terminal closes, so a new one given its id starts unnamed", () => {
+    const store = useTerminalUiStateStore.getState();
+    store.renameTerminal(THREAD_REF, "term-2", "dev server");
+    // Panel terminals are closed through the same action without being in the drawer's list.
+    store.renameTerminal(THREAD_REF, "term-9", "panel");
+
+    store.closeTerminal(THREAD_REF, "term-2");
+    store.closeTerminal(THREAD_REF, "term-9");
+
+    expect(names()).toBeUndefined();
+  });
+
+  it("forgets the name of a terminal the server no longer has, and keeps the others", () => {
+    const store = useTerminalUiStateStore.getState();
+    store.renameTerminal(THREAD_REF, DEFAULT_THREAD_TERMINAL_ID, "shell");
+    store.renameTerminal(THREAD_REF, "term-2", "dev server");
+
+    store.reconcileTerminalIds(THREAD_REF, [DEFAULT_THREAD_TERMINAL_ID]);
+
+    expect(names()).toEqual({ [DEFAULT_THREAD_TERMINAL_ID]: "shell" });
+  });
+
+  it("keeps names when the drawer is only hidden, and drops them with the thread", () => {
+    const store = useTerminalUiStateStore.getState();
+    store.renameTerminal(THREAD_REF, "term-2", "dev server");
+
+    store.setTerminalOpen(THREAD_REF, false);
+    expect(names()).toEqual({ "term-2": "dev server" });
+
+    store.clearTerminalUiState(THREAD_REF);
+    expect(names()).toBeUndefined();
   });
 });

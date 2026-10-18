@@ -17,7 +17,9 @@ import * as Cause from "effect/Cause";
 import { InfoIcon, Trash2Icon } from "lucide-react";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 
+import { APP_BASE_NAME } from "../../branding";
 import { useComposerDraftStore } from "../../composerDraftStore";
+import { useImportTerminalSessions } from "../../hooks/useImportTerminalSessions";
 import { releaseProjectDraftUploads } from "../../lib/composerDraftUploads";
 import { readLocalApi } from "../../localApi";
 import {
@@ -184,6 +186,7 @@ function ProjectDetail({
   const deleteProject = useOrchestrationCommand(projectEnvironment.delete, {
     reportFailure: false,
   });
+  const { importSessions, isImporting: isImportingSessions } = useImportTerminalSessions();
   const projectNameEditedRef = useRef(false);
 
   const faviconPath = representative.faviconPath ?? null;
@@ -564,6 +567,21 @@ function ProjectDetail({
                   Choose file
                 </Button>
               </div>
+            }
+          />
+          <SettingsRow
+            title="Terminal sessions"
+            description={`Import Claude Code and Codex sessions from the last 30 days that ran outside ${APP_BASE_NAME}. Sessions already imported are skipped.`}
+            control={
+              <Button
+                size="sm"
+                variant="outline"
+                type="button"
+                disabled={isImportingSessions}
+                onClick={() => void importSessions(group.memberProjects)}
+              >
+                {isImportingSessions ? "Importing…" : "Import"}
+              </Button>
             }
           />
         </SettingsSection>

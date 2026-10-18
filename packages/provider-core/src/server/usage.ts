@@ -17,6 +17,11 @@ export interface UsageRecord {
   readonly model: string;
   readonly rateModel?: string;
   readonly sessionId: string;
+  /**
+   * Directory the session was working in, or `""` when the transcript does
+   * not say. The usage page groups records into projects by it.
+   */
+  readonly cwd: string;
   readonly totals: UsageTokenTotals;
   readonly reportedCostUsd: number | null;
   readonly speed: UsageSpeed;

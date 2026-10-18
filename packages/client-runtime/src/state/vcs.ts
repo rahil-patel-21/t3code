@@ -305,6 +305,12 @@ export function createVcsEnvironmentAtoms<R, E>(
       concurrency: vcsCommandConcurrency,
       onSettled: invalidateRefs,
     }),
+    refreshLocalStatus: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:vcs:refresh-local-status",
+      tag: WS_METHODS.vcsRefreshLocalStatus,
+      scheduler: vcsCommandScheduler,
+      concurrency: vcsCommandConcurrency,
+    }),
     createWorktree: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:vcs:create-worktree",
       tag: WS_METHODS.vcsCreateWorktree,

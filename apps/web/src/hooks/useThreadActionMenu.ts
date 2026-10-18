@@ -13,6 +13,10 @@ import {
   type ThreadId,
 } from "@t3tools/contracts";
 import { useRouter } from "@tanstack/react-router";
+import { useAtomValue } from "@effect/atom-react";
+import { revealInFileExplorerLabelForConfig } from "../components/preview/fileExplorerLabel";
+import { serverEnvironment } from "../state/server";
+import { shellEnvironment } from "../state/shell";
 
 import { resolveSnoozePresets } from "../components/Sidebar.snooze";
 import {
@@ -111,6 +115,13 @@ export function useThreadActionMenu(input: {
     onError: (error) => failureToast("Failed to copy thread ID", error),
   });
 
+  const openInEditor = useOrchestrationCommand(shellEnvironment.openInEditor, {
+    reportFailure: false,
+  });
+  const serverConfig = useAtomValue(
+    serverEnvironment.configValueAtom(threadRef?.environmentId ?? null),
+  );
+
   const openMenu = (position: { x: number; y: number }) => {
     if (threadRef === null) return;
     void (async () => {
@@ -127,6 +138,7 @@ export function useThreadActionMenu(input: {
         titleRegeneration: readEnvironmentSupportsTitleRegeneration(threadRef.environmentId),
       };
       const isRegeneratingTitle = thread.titleRegeneration != null;
+      const workspacePath = thread.worktreePath ?? projectCwd;
       const snoozePresets = resolveSnoozePresets(now, timestampFormat);
       const items = buildThreadActionMenuItems({
         canOperate: readEnvironmentScope(threadRef.environmentId, AuthOrchestrationOperateScope),
@@ -139,6 +151,9 @@ export function useThreadActionMenu(input: {
         canSnoozeNow: canSnooze(thread, { now: now.toISOString() }),
         isRegeneratingTitle,
         isRunning: !threadRuntimeCanArchive(thread.runtime),
+        revealLabel: workspacePath
+          ? (revealInFileExplorerLabelForConfig(serverConfig) ?? null)
+          : null,
         supports,
         snoozePresets,
       });
@@ -244,7 +259,6 @@ export function useThreadActionMenu(input: {
           markThreadUnread(threadRef);
           return;
         case "copy-path": {
-          const workspacePath = thread.worktreePath ?? projectCwd;
           if (!workspacePath) {
             toastManager.add(
               stackedThreadToast({
@@ -266,6 +280,23 @@ export function useThreadActionMenu(input: {
         case "copy-thread-id":
           copyThreadIdToClipboard(thread.id, { threadId: thread.id });
           return;
+        case "reveal-in-folder": {
+          if (!workspacePath) return;
+          const result = await openInEditor({
+            environmentId: threadRef.environmentId,
+            input: { cwd: workspacePath, editor: "file-manager", reveal: true },
+          });
+          if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+            toastManager.add(
+              stackedThreadToast({
+                type: "error",
+                title: "Unable to reveal folder",
+                description: workspacePath,
+              }),
+            );
+          }
+          return;
+        }
         case "archive": {
           if (confirmThreadArchive) {
             const confirmed = await settlePromise(() =>

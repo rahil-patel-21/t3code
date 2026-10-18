@@ -23,11 +23,13 @@ import { useStableCallback } from "~/hooks/useStableCallback";
 import { useTheme } from "~/hooks/useTheme";
 import { useWorkspaceMutationRefresh } from "~/hooks/useWorkspaceMutationRefresh";
 import { useFileContextMenu, type FileContextMenuAction } from "~/fileContextMenu";
+import { useAtomCommand } from "~/state/use-atom-command";
+import { projectEnvironment } from "~/state/projects";
 import { readLocalApi } from "~/localApi";
 import { T3_PIERRE_ICONS } from "~/pierre-icons";
 import { PIERRE_TREE_UNSAFE_CSS, pierreTreeStyle } from "~/pierre-tree-theme";
 
-import { joinHostPath } from "./filePath";
+import { hideGeneratedEntries, joinHostPath } from "./filePath";
 import { createFileTreeDragMentionController } from "./fileTreeDragMention";
 import { areAllDirectoriesExpanded, setAllDirectoriesExpanded } from "./fileTreeExpansion";
 import { buildFileTreePathUpdates } from "./fileTreePathReconciliation";
@@ -124,7 +126,7 @@ function buildTreeEntries(
       }
     }
   }
-  const entries = [...result.values()];
+  const entries = hideGeneratedEntries([...result.values()]);
   const entryKinds: ReadonlyMap<string, ProjectEntry["kind"]> = new Map(
     entries.map((entry) => [entry.path, entry.kind] as const),
   );
@@ -149,6 +151,8 @@ export default function FileBrowserPanel({
   const { resolvedTheme } = useTheme();
   const composerRef = useComposerHandleContext();
   const fileContextMenu = useFileContextMenu(environmentId);
+  const renameEntry = useAtomCommand(projectEnvironment.renameEntry);
+  const deleteEntry = useAtomCommand(projectEnvironment.deleteEntry);
   const {
     entries: directoryEntries,
     load,
@@ -188,6 +192,7 @@ export default function FileBrowserPanel({
     return () => document.removeEventListener("contextmenu", capturePointer, true);
   }, []);
 
+  const treeModelRef = useRef<ReturnType<typeof useFileTree>["model"] | null>(null);
   const showEntryContextMenu = useStableCallback(
     (item: TreeContextMenuItem, context: TreeContextMenuOpenContext) => {
       const api = readLocalApi();
@@ -205,20 +210,42 @@ export default function FileBrowserPanel({
         : { x: anchorRect.left, y: anchorRect.bottom };
       const fileTarget = { environmentId, filePath: relativePath, workspaceRoot: cwd };
       const fileMenuItems = fileContextMenu.buildItems(fileTarget);
+      let startRename = false;
       void settlePromise(async () => {
         const clicked = await api.contextMenu.show(
           [
             ...fileMenuItems,
             { id: "copy-mention", label: "Copy mention" },
             { id: "add-to-chat", label: "Add to chat" },
+            ...(environmentId === null
+              ? []
+              : [
+                  { id: "rename", label: "Rename", separatorBefore: true },
+                  { id: "delete", label: "Move to Trash", destructive: true, icon: "trash" },
+                ]),
           ],
           position,
         );
         if (clicked === null) return;
+        if (clicked === "rename") {
+          startRename = true;
+          return;
+        }
+        if (clicked === "delete") {
+          const confirmed = await api.dialogs.confirm(`Move "${relativePath}" to the Trash?`, {
+            variant: "destructive",
+          });
+          if (!confirmed || environmentId === null) return;
+          await deleteEntry({ environmentId, input: { cwd, relativePath } });
+          refresh();
+          return;
+        }
         // "Open with" submenu selections report the child id ("editor:<id>"),
         // which is not present in the top-level item list.
         const isFileMenuAction =
-          fileMenuItems.some((entry) => entry.id === clicked) || clicked.startsWith("editor:");
+          fileMenuItems.some((entry) => entry.id === clicked) ||
+          clicked.startsWith("editor:") ||
+          clicked === "open-in-browser";
         if (isFileMenuAction) {
           await fileContextMenu.activate(clicked as FileContextMenuAction, fileTarget);
           return;
@@ -263,10 +290,53 @@ export default function FileBrowserPanel({
         context.close();
         // Keep surfacing unexpected failures as unhandled rejections.
         if (!AsyncResult.isSuccess(result)) throw Cause.squash(result.cause);
+        // Start after the menu closes so its focus restore does not cancel the input.
+        if (startRename) treeModelRef.current?.startRenaming(item.path);
       });
     },
   );
 
+  /**
+   * Persists an inline tree rename. The tree has already applied it, so on
+   * success the path-diff baseline is moved the same way (the refetch is then a
+   * no-op), and on failure the tree is reset to the paths the server reported.
+   */
+  const commitRename = async (event: {
+    sourcePath: string;
+    destinationPath: string;
+    isFolder: boolean;
+  }) => {
+    const relativePath = event.sourcePath.replace(/\/$/, "");
+    const nextRelativePath = event.destinationPath.replace(/\/$/, "");
+    if (environmentId === null || relativePath === nextRelativePath) return;
+    const result = await renameEntry({
+      environmentId,
+      input: { cwd, relativePath, nextRelativePath },
+    });
+    const baseline = previousTreePathsRef.current;
+    if (result._tag === "Success") {
+      const from = event.isFolder ? `${relativePath}/` : relativePath;
+      const to = event.isFolder ? `${nextRelativePath}/` : nextRelativePath;
+      const move = (path: string) =>
+        path === from
+          ? to
+          : event.isFolder && path.startsWith(from)
+            ? `${to}${path.slice(from.length)}`
+            : path;
+      if (baseline !== null) previousTreePathsRef.current = baseline.map(move);
+      // Keep an open file (or one inside a renamed folder) open at its new path.
+      if (selectedPath !== null && move(selectedPath) !== selectedPath) {
+        onOpenFile(move(selectedPath));
+      }
+    } else if (baseline !== null) {
+      treeModelRef.current?.resetPaths(baseline);
+    }
+    refresh();
+  };
+  const commitRenameRef = useRef(commitRename);
+  useEffect(() => {
+    commitRenameRef.current = commitRename;
+  });
   const loadingDirectoriesRef = useRef(loadingDirectories);
   const dragMention = createFileTreeDragMentionController(
     hostFolder ? { mentionPath: (path: string) => joinHostPath(cwd, path) } : {},
@@ -281,6 +351,14 @@ export default function FileBrowserPanel({
       },
     },
     dragAndDrop: { canDrop: () => false },
+    renaming: {
+      onRename: (event) => {
+        void commitRenameRef.current(event);
+      },
+      onError: (message) => {
+        toastManager.add({ type: "error", title: "Could not rename", description: message });
+      },
+    },
     density: "compact",
     fileTreeSearchMode: "hide-non-matches",
     flattenEmptyDirectories: true,

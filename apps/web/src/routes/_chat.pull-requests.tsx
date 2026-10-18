@@ -2,6 +2,7 @@ import {
   applyPullRequestDraftFilterChange,
   parsePullRequestQuery,
 } from "@t3tools/client-runtime/pull-request-query";
+import { APP_BASE_NAME } from "~/branding";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import { Spinner } from "~/components/ui/spinner";
 import { useShortcutModifierState } from "~/shortcutModifierState";
@@ -1286,6 +1287,7 @@ function PullRequestsRouteView() {
       rightPanelShortcutLabel={shortcutLabelForCommand(keybindings, "rightPanel.toggle")}
       rightPanelUnavailableLabel="Select a pull request first"
       onToggleTerminal={() => undefined}
+      liveAgentCount={0}
       onToggleRightPanel={toggleRightPanel}
     />
   );
@@ -1314,7 +1316,7 @@ function PullRequestsRouteView() {
       ) : !pullRequestsSupported ? (
         <PullRequestsUnavailableState
           title="Pull requests unavailable"
-          error="Update your T3 Code servers to browse pull requests."
+          error={`Update your ${APP_BASE_NAME} servers to browse pull requests.`}
         />
       ) : firstLoad ? (
         <PullRequestListGhost rows={7} />

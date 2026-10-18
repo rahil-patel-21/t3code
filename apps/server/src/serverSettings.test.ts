@@ -1043,6 +1043,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
             claudeAgent: { enabled: false },
             cursor: { enabled: false },
             grok: { enabled: false },
+            minimaxCode: { enabled: false },
             opencode: { enabled: false },
           },
         }),
@@ -1329,6 +1330,27 @@ it.layer(NodeServices.layer)("server settings", (it) => {
         observability: {
           otlpTracesUrl: "http://localhost:4318/v1/traces",
           otlpMetricsUrl: "http://localhost:4318/v1/metrics",
+        },
+        providers: {
+          codex: {
+            binaryPath: "/opt/homebrew/bin/codex",
+          },
+          cursor: {
+            enabled: false,
+          },
+          grok: {
+            enabled: false,
+          },
+          // MiniMax Code is opt-in like the three CLI providers above, so its
+          // explicit opt-out is persisted rather than stripped as a default.
+          minimaxCode: {
+            enabled: false,
+          },
+          opencode: {
+            enabled: false,
+            serverUrl: "http://127.0.0.1:4096",
+            serverPassword: "secret-password",
+          },
         },
         backgroundActivity: {
           schemaVersion: 1,

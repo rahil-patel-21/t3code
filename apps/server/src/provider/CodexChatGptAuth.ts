@@ -3,6 +3,7 @@ import * as NodeCrypto from "node:crypto";
 import * as NodeHttp from "node:http";
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import {
+  APP_BASE_NAME,
   ProviderSetupError,
   type ChatGptReconnectProfile,
   type ChatGptTransferredProfile,
@@ -515,7 +516,7 @@ export const makeCodexChatGptAuth = Effect.fn("makeCodexChatGptAuth")(function* 
               ? { prompt: "consent" }
               : {}),
           }
-        : { agent_name_hint: "T3 Code" }),
+        : { agent_name_hint: APP_BASE_NAME }),
       ext_agent_host_id: hostId,
       response_type: "code",
       redirect_uri: redirectUri,

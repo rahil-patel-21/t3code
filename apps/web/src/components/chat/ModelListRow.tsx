@@ -5,6 +5,7 @@ import {
   getDisplayModelName,
   getProviderRowLabel,
   getTriggerDisplayModelLabel,
+  stripModelNameBrand,
 } from "./providerIconUtils";
 import { ComboboxItem } from "../ui/combobox";
 import { Button } from "../ui/button";
@@ -42,13 +43,19 @@ export const ModelListRow = memo(function ModelListRow(props: {
   disabledReason?: string | null;
   onToggleFavorite: (instanceId: ProviderInstanceId, slug: string) => void;
 }) {
-  const model = {
+const model = {
     slug: props.slug,
     name: props.name,
     shortName: props.shortName,
     subProvider: props.subProvider,
   };
   const providerLabel = getProviderRowLabel(props.providerDisplayName, props.subProvider);
+  const modelName = props.useTriggerLabel
+    ? getTriggerDisplayModelLabel(model)
+    : getDisplayModelName(
+        model,
+        props.preferShortName ? { preferShortName: true } : undefined,
+      );
 
   const row = (
     <ComboboxItem
@@ -65,12 +72,7 @@ export const ModelListRow = memo(function ModelListRow(props: {
       <div className="min-w-0 flex-1 text-left">
         <div className="flex min-w-0 items-center gap-2">
           <div className="min-w-0 truncate text-xs font-medium leading-snug">
-            {props.useTriggerLabel
-              ? getTriggerDisplayModelLabel(model)
-              : getDisplayModelName(
-                  model,
-                  props.preferShortName ? { preferShortName: true } : undefined,
-                )}
+{props.showProvider ? stripModelNameBrand(modelName, props.driverKind) : modelName}
           </div>
           {props.showNewBadge ? (
             <span

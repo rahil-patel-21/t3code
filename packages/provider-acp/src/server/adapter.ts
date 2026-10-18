@@ -317,6 +317,15 @@ export interface AcpAdapterV2Flavor {
    * fail before `session/prompt`.
    */
   readonly supportsImagePrompts?: boolean;
+  /**
+   * How to handle image attachments when the agent will not take image content
+   * blocks. `"reject"` (the default) fails the turn, because the agent would
+   * otherwise answer as if it had seen an image it never received.
+   * `"reference"` sends the file path in the text instead and lets the agent
+   * open it with its own file tools, which is the honest route for agents that
+   * advertise `image: false` but ship a capable reader.
+   */
+  readonly unsupportedImageAttachmentPolicy?: "reject" | "reference";
 }
 
 export function acpSupportsImagePrompts(input: {
@@ -6329,13 +6338,37 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
           const imageAttachments = turnInput.message.attachments.filter(
             isProviderNativeImageAttachment,
           );
-          if (imageAttachments.length > 0 && !supportsImagePrompts) {
+          const referencesImagesAsPaths =
+            !supportsImagePrompts && flavor.unsupportedImageAttachmentPolicy === "reference";
+          if (imageAttachments.length > 0 && !supportsImagePrompts && !referencesImagesAsPaths) {
             return yield* new ProviderAdapter.ProviderAdapterProtocolError({
               driver,
-              detail: "ACP driver did not negotiate image prompt support",
+              // The agent rejects image content outright, so retrying the same
+              // turn can never succeed. Say why and what to do instead, because
+              // this detail is what the user is shown.
+              detail: `${driver} does not accept image attachments, so the turn was not sent. Remove the image and attach the file as text instead`,
             });
           }
-          for (const attachment of imageAttachments) {
+          // Path-only reference: the agent reads the file with its own tools, so
+          // it has to be told the images exist before it answers.
+          if (referencesImagesAsPaths && imageAttachments.length > 0) {
+            const references = imageAttachments.flatMap((attachment) => {
+              const path = host.resolveAttachmentPath(attachment as ChatAttachment);
+              return path === null
+                ? []
+                : [`- "${attachment.name}" (${attachment.mimeType}) is saved at: ${path}`];
+            });
+            if (references.length > 0) {
+              prompt.push({
+                type: "text",
+                text: [
+                  "The user attached images. This agent does not accept images in prompts, so they are referenced by path instead. Open each one with your file-reading tools and look at it before answering.",
+                  ...references,
+                ].join("\n"),
+              });
+            }
+          }
+          for (const attachment of referencesImagesAsPaths ? [] : imageAttachments) {
             const path = host.resolveAttachmentPath(attachment as ChatAttachment);
             if (path === null) {
               return yield* new ProviderAdapter.ProviderAdapterProtocolError({

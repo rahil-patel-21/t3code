@@ -40,6 +40,8 @@ export const ChangedFilesCard = memo(function ChangedFilesCard(props: {
   } = props;
   const summaryStat = summarizeTurnDiffStats(files);
   const hasDirectories = files.some((file) => /[/\\]/.test(file.path));
+  // The card opens as just its counts; the tree shows on demand.
+  const [summaryExpanded, setSummaryExpanded] = useState(false);
 
   return (
     <div
@@ -48,23 +50,50 @@ export const ChangedFilesCard = memo(function ChangedFilesCard(props: {
     >
       <div
         data-changed-files-header=""
-        className="sticky top-2 z-10 flex items-center justify-between gap-2 rounded-t-lg bg-secondary px-3 py-2 dark:bg-background dark:bg-linear-to-b dark:from-input/20 dark:to-input/20"
+        className={cn(
+          "sticky top-2 z-10 flex items-center justify-between gap-2 rounded-t-lg bg-secondary px-3 py-2 dark:bg-background dark:bg-linear-to-b dark:from-input/20 dark:to-input/20",
+          !summaryExpanded && "rounded-b-lg",
+        )}
       >
-        <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs font-medium text-foreground">
-          <span>
-            {files.length} changed file{files.length === 1 ? "" : "s"}
-          </span>
-          {hasNonZeroStat(summaryStat) && (
-            <DiffStatLabel
-              additions={summaryStat.additions}
-              deletions={summaryStat.deletions}
-              layout="inline"
-              className="text-xs leading-4"
-            />
-          )}
+        <div className="flex min-w-0 items-center gap-1">
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  type="button"
+                  size="icon-xs"
+                  variant="ghost-muted"
+                  aria-expanded={summaryExpanded}
+                  aria-label={summaryExpanded ? "Collapse summary" : "Expand summary"}
+                  data-scroll-anchor-ignore
+                  onClick={() => setSummaryExpanded((expanded) => !expanded)}
+                />
+              }
+            >
+              <ChevronRightIcon
+                className={cn("size-3 transition-transform", summaryExpanded && "rotate-90")}
+              />
+            </TooltipTrigger>
+            <TooltipPopup side="top">
+              {summaryExpanded ? "Collapse summary" : "Expand summary"}
+            </TooltipPopup>
+          </Tooltip>
+          <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs font-medium text-foreground">
+            <span>
+              {files.length} changed file{files.length === 1 ? "" : "s"}
+            </span>
+            {hasNonZeroStat(summaryStat) && (
+              <DiffStatLabel
+                additions={summaryStat.additions}
+                deletions={summaryStat.deletions}
+                layout="inline"
+                className="text-xs leading-4"
+              />
+            )}
+          </div>
         </div>
         <div className="flex shrink-0 items-center gap-1">
-          {hasDirectories && (
+          {summaryExpanded && hasDirectories && (
             <Tooltip>
               <TooltipTrigger
                 render={
@@ -109,15 +138,17 @@ export const ChangedFilesCard = memo(function ChangedFilesCard(props: {
           </Tooltip>
         </div>
       </div>
-      <ChangedFilesTree
-        key={`${runId}:${allDirectoriesExpanded}`}
-        runId={runId}
-        files={files}
-        allDirectoriesExpanded={allDirectoriesExpanded}
-        resolvedTheme={resolvedTheme}
-        onOpenTurnDiff={onOpenTurnDiff}
-        onFileContextMenu={onFileContextMenu}
-      />
+      {summaryExpanded ? (
+        <ChangedFilesTree
+          key={`${runId}:${allDirectoriesExpanded}`}
+          runId={runId}
+          files={files}
+          allDirectoriesExpanded={allDirectoriesExpanded}
+          resolvedTheme={resolvedTheme}
+          onOpenTurnDiff={onOpenTurnDiff}
+          onFileContextMenu={onFileContextMenu}
+        />
+      ) : null}
     </div>
   );
 });

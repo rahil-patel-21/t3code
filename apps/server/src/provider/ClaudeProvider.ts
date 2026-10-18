@@ -1,4 +1,5 @@
 import {
+  APP_BASE_NAME,
   type ClaudeSettings,
   type ModelCapabilities,
   type ServerProvider,
@@ -497,7 +498,7 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
         version: null,
         status: "warning",
         auth: { status: "unknown" },
-        message: "Claude is disabled in T3 Code settings.",
+        message: `Claude is disabled in ${APP_BASE_NAME} settings.`,
       },
     });
   }
@@ -692,7 +693,7 @@ export const makePendingClaudeProvider = (
           version: null,
           status: "warning",
           auth: { status: "unknown" },
-          message: "Claude is disabled in T3 Code settings.",
+          message: `Claude is disabled in ${APP_BASE_NAME} settings.`,
         },
       });
     }

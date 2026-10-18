@@ -1,3 +1,9 @@
+import branding from "../../../../packages/contracts/src/branding.json" with { type: "json" };
+
+// The marketing site does not depend on @t3tools/contracts, so it reads the
+// product name straight from the shared branding file.
+export const APP_BASE_NAME = branding.name;
+
 export const GITHUB_REPOSITORY_URL = "https://github.com/pingdotgg/t3code";
 
 export const IOS_APP_STORE_URL =

@@ -67,6 +67,14 @@ import {
 } from "./acpRegistry.ts";
 import { ExternalLauncherError, LaunchEditorInput } from "./editor.ts";
 import {
+  ApiGatewayApplyInput,
+  ApiGatewayExecuteError,
+  ApiGatewayExecuteInput,
+  ApiGatewayExecuteResult,
+  ApiGatewayWorkspace,
+  ApiGatewayWorkspaceError,
+} from "./apiGateway.ts";
+import {
   AuthAccessStreamError,
   AuthAccessStreamEvent,
   EnvironmentAuthorizationError,
@@ -88,6 +96,8 @@ import {
   AgentSessionImportProjectChangedError,
   AgentSessionImportProjectNotFoundError,
   AgentSessionImportResult,
+  AgentSessionListProjectSessionsInput,
+  AgentSessionListProjectSessionsResult,
   AgentSessionScanInput,
   AgentSessionScanResult,
   AgentSessionScanError,
@@ -138,6 +148,7 @@ import {
   GitResolvePullRequestResult,
   GitRunStackedActionInput,
   VcsStatusInput,
+  VcsStatusLocalResult,
   VcsStatusSubscriptionInput,
   VcsStatusResult,
   VcsStatusStreamEvent,
@@ -235,6 +246,8 @@ import {
   ProjectSearchEntriesResult,
   ProjectWriteFileError,
   ProjectWriteFileInput,
+  ProjectRenameEntryInput,
+  ProjectDeleteEntryInput,
   ProjectWriteFileResult,
 } from "./project.ts";
 import {
@@ -380,6 +393,8 @@ export const WS_METHODS = {
   projectsSearchContents: "projects.searchContents",
   projectsSearchEntries: "projects.searchEntries",
   projectsWriteFile: "projects.writeFile",
+  projectsRenameEntry: "projects.renameEntry",
+  projectsDeleteEntry: "projects.deleteEntry",
   projectsMutate: "projects.mutate",
   projectsEnsureScratch: "projects.ensureScratch",
   projectsCreateNew: "projects.createNew",
@@ -390,6 +405,7 @@ export const WS_METHODS = {
   filesystemGetMetadata: "filesystem.getMetadata",
   agentSessionsScan: "agentSessions.scan",
   agentSessionsImport: "agentSessions.import",
+  agentSessionsListProjectSessions: "agentSessions.listProjectSessions",
   assetsCreateUrl: "assets.createUrl",
   assetsPersistChatAttachments: "assets.persistChatAttachments",
   attachmentsCreateUploadUrl: "attachments.createUploadUrl",
@@ -419,6 +435,7 @@ export const WS_METHODS = {
 
   vcsPull: "vcs.pull",
   vcsRefreshStatus: "vcs.refreshStatus",
+  vcsRefreshLocalStatus: "vcs.refreshLocalStatus",
   vcsListRefs: "vcs.listRefs",
   vcsCreateWorktree: "vcs.createWorktree",
   vcsRemoveWorktree: "vcs.removeWorktree",
@@ -556,6 +573,11 @@ export const WS_METHODS = {
   projectCloneCancel: "projectClone.cancel",
   projectCloneRetry: "projectClone.retry",
   subscribeProjectClones: "subscribeProjectClones",
+
+  // API Gateway methods
+  apiGatewayExecute: "apiGateway.execute",
+  apiGatewayApply: "apiGateway.apply",
+  subscribeApiGateway: "subscribeApiGateway",
 
   subscribeVcsStatus: "subscribeVcsStatus",
   subscribeWorktreeSetup: "subscribeWorktreeSetup",
@@ -1219,6 +1241,16 @@ const WsProjectsWriteFileRpc = Rpc.make(WS_METHODS.projectsWriteFile, {
   error: Schema.Union([ProjectWriteFileError, EnvironmentAuthorizationError]),
 });
 
+const WsProjectsRenameEntryRpc = Rpc.make(WS_METHODS.projectsRenameEntry, {
+  payload: ProjectRenameEntryInput,
+  error: Schema.Union([ProjectWriteFileError, EnvironmentAuthorizationError]),
+});
+
+const WsProjectsDeleteEntryRpc = Rpc.make(WS_METHODS.projectsDeleteEntry, {
+  payload: ProjectDeleteEntryInput,
+  error: Schema.Union([ProjectWriteFileError, EnvironmentAuthorizationError]),
+});
+
 const WsProjectsMutateRpc = Rpc.make(WS_METHODS.projectsMutate, {
   payload: ProjectMutation,
   success: Project,
@@ -1270,6 +1302,19 @@ const WsAgentSessionsImportRpc = Rpc.make(WS_METHODS.agentSessionsImport, {
     EnvironmentAuthorizationError,
   ]),
 });
+
+const WsAgentSessionsListProjectSessionsRpc = Rpc.make(
+  WS_METHODS.agentSessionsListProjectSessions,
+  {
+    payload: AgentSessionListProjectSessionsInput,
+    success: AgentSessionListProjectSessionsResult,
+    error: Schema.Union([
+      AgentSessionImportProjectNotFoundError,
+      AgentSessionScanError,
+      EnvironmentAuthorizationError,
+    ]),
+  },
+);
 
 const WsAssetsCreateUrlRpc = Rpc.make(WS_METHODS.assetsCreateUrl, {
   payload: AssetCreateUrlInput,
@@ -1339,6 +1384,13 @@ const WsVcsPullRpc = Rpc.make(WS_METHODS.vcsPull, {
 const WsVcsRefreshStatusRpc = Rpc.make(WS_METHODS.vcsRefreshStatus, {
   payload: VcsStatusInput,
   success: VcsStatusResult,
+  error: Schema.Union([GitManagerServiceError, EnvironmentAuthorizationError]),
+});
+
+/** Re-reads only the working tree (no fetch or pull request lookup); subscribers hear of changes. */
+const WsVcsRefreshLocalStatusRpc = Rpc.make(WS_METHODS.vcsRefreshLocalStatus, {
+  payload: VcsStatusInput,
+  success: VcsStatusLocalResult,
   error: Schema.Union([GitManagerServiceError, EnvironmentAuthorizationError]),
 });
 
@@ -1847,6 +1899,24 @@ const WsSubscribeResourceTelemetryRpc = Rpc.make(WS_METHODS.subscribeResourceTel
   stream: true,
 });
 
+const WsApiGatewayExecuteRpc = Rpc.make(WS_METHODS.apiGatewayExecute, {
+  payload: ApiGatewayExecuteInput,
+  success: ApiGatewayExecuteResult,
+  error: Schema.Union([ApiGatewayExecuteError, EnvironmentAuthorizationError]),
+});
+
+const WsApiGatewayApplyRpc = Rpc.make(WS_METHODS.apiGatewayApply, {
+  payload: ApiGatewayApplyInput,
+  error: Schema.Union([ApiGatewayWorkspaceError, EnvironmentAuthorizationError]),
+});
+
+const WsSubscribeApiGatewayRpc = Rpc.make(WS_METHODS.subscribeApiGateway, {
+  payload: Schema.Struct({}),
+  success: ApiGatewayWorkspace,
+  error: Schema.Union([ApiGatewayWorkspaceError, EnvironmentAuthorizationError]),
+  stream: true,
+});
+
 export class RpcScopeAuthorization extends RpcMiddleware.Service<RpcScopeAuthorization>()(
   "t3/contracts/RpcScopeAuthorization",
   { error: EnvironmentAuthorizationError },
@@ -1965,12 +2035,15 @@ export const WsRpcGroup = RpcGroup.make(
   WsProjectsEnsureScratchRpc,
   WsProjectsCreateNewRpc,
   WsProjectsWriteFileRpc,
+  WsProjectsRenameEntryRpc,
+  WsProjectsDeleteEntryRpc,
   WsProjectsMutateRpc,
   WsShellOpenInEditorRpc,
   WsFilesystemBrowseRpc,
   WsFilesystemGetMetadataRpc,
   WsAgentSessionsScanRpc,
   WsAgentSessionsImportRpc,
+  WsAgentSessionsListProjectSessionsRpc,
   WsAssetsCreateUrlRpc,
   WsAssetsPersistChatAttachmentsRpc,
   WsAttachmentsCreateUploadUrlRpc,
@@ -1985,6 +2058,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsWorktreeSetupCancelRpc,
   WsVcsPullRpc,
   WsVcsRefreshStatusRpc,
+  WsVcsRefreshLocalStatusRpc,
   WsGitRunStackedActionRpc,
   WsGitResolvePullRequestRpc,
   WsGitPreparePullRequestThreadRpc,
@@ -2032,6 +2106,9 @@ export const WsRpcGroup = RpcGroup.make(
   WsSubscribeAuthAccessRpc,
   WsSubscribeBackgroundPolicyRpc,
   WsSubscribeResourceTelemetryRpc,
+  WsApiGatewayExecuteRpc,
+  WsApiGatewayApplyRpc,
+  WsSubscribeApiGatewayRpc,
   WsOrchestrationV2DispatchCommandRpc,
   WsOrchestrationV2GetWorkflowScriptRpc,
   WsOrchestrationV2StopWorkflowRpc,

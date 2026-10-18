@@ -149,10 +149,19 @@ const decodeCachedSources = Schema.decodeUnknownOption(
   Schema.Struct({ sources: Schema.Record(Schema.String, CachedSource) }),
 );
 
+/** A T3 project that usage from sessions under its workspace is credited to. */
+export interface UsageProject {
+  readonly title: string;
+  readonly workspaceRoot: string;
+}
+
 export class UsageService extends Context.Service<
   UsageService,
   {
-    readonly readSummary: (input: UsageSummaryInput) => Effect.Effect<UsageSummary, UsageReadError>;
+    readonly readSummary: (
+      input: UsageSummaryInput,
+      projects?: ReadonlyArray<UsageProject>,
+    ) => Effect.Effect<UsageSummary, UsageReadError>;
     readonly refreshRates: Effect.Effect<UsagePricing>;
   }
 >()("t3/usage/UsageService") {}
@@ -198,6 +207,64 @@ export const make = Effect.gen(function* () {
   const isWithinDirectory = (filePath: string, dir: string) => {
     const relative = path.relative(dir, filePath);
     return relative !== ".." && !relative.startsWith(".." + path.sep) && !path.isAbsolute(relative);
+  };
+  const homeDir = NodeOS.homedir();
+
+  /**
+   * The directory a transcript's session started in. Records drift into
+   * subdirectories as the agent works, so the first record's is used. Claude
+   * files live under `projects/<start directory, non-alphanumerics dashed>/`,
+   * which maps a subagent transcript that began in a subdirectory back to its
+   * session's start directory.
+   */
+  const sessionDirectory = (
+    provider: UsageProviderKind,
+    sourceDir: string,
+    filePath: string,
+    records: readonly UsageRecord[],
+  ): string => {
+    const cwd = records.find((record) => record.cwd.length > 0)?.cwd ?? "";
+    if (provider !== "claude" || cwd.length === 0) return cwd;
+    const projectKey = path.relative(sourceDir, filePath).split(path.sep)[0];
+    for (let dir = cwd; ; dir = path.dirname(dir)) {
+      if (dir.replace(/[^a-zA-Z0-9]/g, "-") === projectKey) return dir;
+      if (path.dirname(dir) === dir) return cwd;
+    }
+  };
+
+  /**
+   * Names session directories: the T3 project whose workspace contains the
+   * directory (the deepest one when projects nest) or whose worktree it is,
+   * otherwise the directory itself with the home directory shown as `~`.
+   */
+  const makeProjectLabeler = (projects: ReadonlyArray<UsageProject>) => {
+    // T3 creates worktrees at <worktreesDir>/<project root basename>/<branch>.
+    const worktreesDir = path.resolve(config.worktreesDir);
+    const labels = new Map<string, string>();
+    return (directory: string): string => {
+      if (directory.length === 0) return "";
+      const known = labels.get(directory);
+      if (known !== undefined) return known;
+      const worktreeOf = isWithinDirectory(directory, worktreesDir)
+        ? path.relative(worktreesDir, directory).split(path.sep)[0]
+        : "";
+      let match: UsageProject | undefined;
+      for (const project of projects) {
+        const contains =
+          isWithinDirectory(directory, project.workspaceRoot) ||
+          (worktreeOf !== "" && path.basename(project.workspaceRoot) === worktreeOf);
+        if (contains && project.workspaceRoot.length > (match?.workspaceRoot.length ?? -1)) {
+          match = project;
+        }
+      }
+      const label =
+        match?.title ??
+        (isWithinDirectory(directory, homeDir)
+          ? path.join("~", path.relative(homeDir, directory))
+          : directory);
+      labels.set(directory, label);
+      return label;
+    };
   };
 
   const ratesCachePath = path.join(config.stateDir, "usage-model-rates.json");
@@ -616,6 +683,7 @@ export const make = Effect.gen(function* () {
   const scanSummary = Effect.fn("UsageService.scanSummary")(function* (
     input: UsageSummaryInput,
     settings: ServerSettingsValue,
+    projects: ReadonlyArray<UsageProject>,
   ) {
     if (input.sinceDay > input.untilDay) {
       return yield* new UsageReadError({
@@ -684,6 +752,7 @@ export const make = Effect.gen(function* () {
     });
 
     const sources: UsageSource[] = [];
+    const labelProject = makeProjectLabeler(projects);
 
     // Cleanup may remove transcripts, but the usage we already saved still
     // contributes to its source through the normal aggregation and dedupe path.
@@ -721,6 +790,7 @@ export const make = Effect.gen(function* () {
           continue;
         }
         scannedFiles += 1;
+        const project = labelProject(sessionDirectory(provider, dir, file.path, file.records));
         const eventOccurrences = new Map<string, number>();
         for (const record of file.records) {
           let usageRecord = record;
@@ -741,7 +811,7 @@ export const make = Effect.gen(function* () {
             eventOccurrences.set(key, occurrence);
             usageRecord = { ...record, dedupeKey: key + ":" + occurrence };
           }
-          if (aggregator.add(usageRecord, dir) && record.sessionId.length > 0) {
+          if (aggregator.add(usageRecord, dir, project) && record.sessionId.length > 0) {
             sessionIds.add(record.sessionId);
           }
         }
@@ -781,9 +851,19 @@ export const make = Effect.gen(function* () {
     } satisfies UsageSummary;
   });
 
+  /**
+   * In-flight scans by window, usage settings, and project names, so concurrent
+   * identical requests (the usage page open on two clients at once) share one scan
+   * instead of racing over the same corpus twice. Readers read settings of their
+   * own, so a scan is shared only under the same settings snapshot.
+   */
   const inflightScans = new Map<string, Deferred.Deferred<UsageSummary, UsageReadError>>();
 
-  const scanKey = (input: UsageSummaryInput, settings: ServerSettingsValue): string =>
+  const scanKey = (
+    input: UsageSummaryInput,
+    settings: ServerSettingsValue,
+    projects: ReadonlyArray<UsageProject>,
+  ): string =>
     JSON.stringify([
       input.timeZone,
       input.sinceDay,
@@ -792,12 +872,18 @@ export const make = Effect.gen(function* () {
       input.sinceTime ?? null,
       input.untilTime ?? null,
       settings,
+      // The per-project breakdown reads each record's `cwd`, so the project
+      // list is part of what the answer depends on.
+      projects.map((project) => [project.title, project.workspaceRoot]),
       input.awaitRefresh === true,
     ]);
 
-  const readSummary = Effect.fn("UsageService.readSummary")(function* (input: UsageSummaryInput) {
+  const readSummary = Effect.fn("UsageService.readSummary")(function* (
+    input: UsageSummaryInput,
+    projects: ReadonlyArray<UsageProject> = [],
+  ) {
     const settings = yield* readSettings;
-    const key = scanKey(input, settings);
+    const key = scanKey(input, settings, projects);
     const deferred = yield* Effect.uninterruptible(
       Effect.gen(function* () {
         const existing = inflightScans.get(key);
@@ -811,7 +897,7 @@ export const make = Effect.gen(function* () {
         // the fibers awaiting it; a finished scan warms the cache either way.
         // The cache write is registered before the waiters resume, so they
         // can await it, but its fiber starts after they have the summary.
-        yield* scanSummary(input, settings).pipe(
+        yield* scanSummary(input, settings, projects).pipe(
           Effect.onExit((exit) =>
             Effect.sync(() => inflightScans.delete(key)).pipe(
               Effect.andThen(Exit.isSuccess(exit) ? schedulePersist : Effect.void),

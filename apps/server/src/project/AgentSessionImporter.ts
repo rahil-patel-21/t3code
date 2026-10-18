@@ -16,10 +16,13 @@ import {
   TurnItemId,
   type AgentSessionImportInput,
   type AgentSessionImportResult,
+  type AgentSessionListProjectSessionsInput,
+  type AgentSessionProjectSession,
   type OrchestrationV2AppThread,
   type OrchestrationV2ConversationMessage,
   type OrchestrationV2DomainEvent,
   type OrchestrationV2ProviderThread,
+  type OrchestrationV2ThreadProjection,
   type OrchestrationV2TurnItem,
 } from "@t3tools/contracts";
 import { normalizeProjectPathForComparison } from "@t3tools/shared/path";
@@ -30,6 +33,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
+import * as SqlClient from "effect/sql/SqlClient";
 
 import * as EventSink from "../orchestration-v2/EventSink.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
@@ -165,6 +169,86 @@ function messageEvents(input: {
   ];
 }
 
+// Imported messages reuse the importer's `${threadId}:<6-digit index>` id scheme
+// (see `messageEvents`), so the prefix separates them from anything the thread
+// itself produced after the import.
+const isImportedMessageId = (threadId: ThreadId, messageId: string): boolean =>
+  messageId.startsWith(`${threadId}:`);
+
+/** True once the thread was used in T3, after which CLI history can no longer be appended. */
+function isContinuedInT3(projection: OrchestrationV2ThreadProjection): boolean {
+  return (
+    projection.runs.length > 0 ||
+    projection.providerThreads.some(
+      (providerThread) => providerThread.providerSessionId !== null,
+    ) ||
+    projection.messages.some((message) => !isImportedMessageId(projection.thread.id, message.id))
+  );
+}
+
+// How many trailing imported messages must line up with the transcript before
+// anything after them counts as new.
+const SYNC_ALIGNMENT_WINDOW = 3;
+
+/**
+ * Transcript messages that follow the thread's imported history. Aligns on the
+ * last few imported messages (role and text) instead of timestamps, because
+ * records without timestamps fall back to the file mtime, which moves on every
+ * write. ponytail: takes the latest alignment, so a repeated exchange can hide
+ * new messages (never duplicate them); and more than ~200 new CLI messages
+ * push the anchor out of the parsed window, which reads as "nothing new".
+ */
+function newTranscriptMessages(
+  projection: OrchestrationV2ThreadProjection,
+  messages: ReadonlyArray<AgentSessionScanner.AgentSessionThreadMessage>,
+): ReadonlyArray<AgentSessionScanner.AgentSessionThreadMessage> {
+  const anchor = projection.messages
+    .filter((message) => isImportedMessageId(projection.thread.id, message.id))
+    .slice(-SYNC_ALIGNMENT_WINDOW);
+  if (anchor.length === 0) return [];
+  for (let end = messages.length; end >= anchor.length; end -= 1) {
+    const aligned = anchor.every((message, index) => {
+      const candidate = messages[end - anchor.length + index];
+      return candidate?.role === message.role && candidate.text === message.text;
+    });
+    if (aligned) return messages.slice(end);
+  }
+  return [];
+}
+
+const importedThreadId = (providerInstanceId: string, providerSessionId: string) =>
+  ThreadId.make(`import:${providerInstanceId}:${providerSessionId}`);
+
+// The sidebar re-lists on focus. Changes to known transcripts are seen on every
+// listing (a cheap stat); discovering brand-new session files walks every CLI
+// transcript, so that happens at most this often.
+const LIST_CANDIDATE_MAX_AGE_MS = 120_000;
+
+/**
+ * Parsed transcripts the listing already read, keyed by file. Passed back to
+ * the scanner as completed sources so an unchanged file is matched by its
+ * identity (size, mtime, inode) instead of being read and parsed again on
+ * every sidebar refresh. A changed file fails the identity match and is reread.
+ * ponytail: process-wide and capped by entry count, not bytes; each entry holds
+ * at most the scanner's 200 retained messages.
+ */
+interface ListedTranscript {
+  readonly source: AgentSessionImportSource;
+  readonly thread: AgentSessionScanner.AgentSessionThread;
+}
+const listedTranscripts = new Map<string, ListedTranscript>();
+const LISTED_TRANSCRIPTS_MAX = 200;
+
+function rememberListedTranscript(entry: ListedTranscript): void {
+  const key = `${entry.source.providerInstanceId}\0${entry.source.filePath}`;
+  listedTranscripts.delete(key);
+  listedTranscripts.set(key, entry);
+  if (listedTranscripts.size > LISTED_TRANSCRIPTS_MAX) {
+    const oldest = listedTranscripts.keys().next().value;
+    if (oldest !== undefined) listedTranscripts.delete(oldest);
+  }
+}
+
 const make = Effect.gen(function* () {
   const scanner = yield* AgentSessionScanner.AgentSessionScanner;
   const orchestrator = yield* Orchestrator.OrchestratorV2;
@@ -172,6 +256,53 @@ const make = Effect.gen(function* () {
   const eventSink = yield* EventSink.EventSinkV2;
   const idAllocator = yield* IdAllocator.IdAllocatorV2;
   const runtimes = yield* ProviderSessionRuntime.ProviderSessionRuntimeRepository;
+  const sql = yield* SqlClient.SqlClient;
+
+  /**
+   * T3's own threads write transcripts to the same CLI homes, so the sessions a
+   * T3 thread is bound to did not come from a terminal. `bound` holds them all:
+   * resume cursors for imports and pre-V2 threads, provider-thread native ids
+   * for V2 threads. `skip` is what the scanner can leave unread; an import that
+   * nobody continued in T3 stays readable so its CLI updates can sync.
+   * ponytail: a thread's earlier session ids (before a fork) are not tracked.
+   */
+  const t3BoundSessions = Effect.fn("t3BoundSessions")(function* (
+    runtimeRows: ReadonlyArray<ProviderSessionRuntime.ProviderSessionRuntime>,
+    completedSources: ReadonlyArray<AgentSessionImportSource>,
+  ) {
+    const bound = new Set<string>();
+    for (const runtime of runtimeRows) {
+      const cursor = runtime.resumeCursor;
+      if (cursor === null || typeof cursor !== "object") continue;
+      for (const key of ["resume", "sessionId", "threadId"] as const) {
+        const value = (cursor as Record<string, unknown>)[key];
+        if (typeof value === "string") bound.add(value);
+      }
+    }
+    const nativeRows = yield* sql<{ readonly nativeId: string }>`
+      SELECT json_extract(payload_json, '$.nativeThreadRef.nativeId') AS "nativeId"
+      FROM orchestration_v2_projection_provider_threads
+      WHERE json_extract(payload_json, '$.nativeThreadRef.nativeId') IS NOT NULL
+    `.pipe(
+      Effect.mapError((cause) => new AgentSessionScanError({ operation: "read-projects", cause })),
+    );
+    for (const row of nativeRows) bound.add(row.nativeId);
+    // Sessions T3 drives write their transcripts as they work, often many MB and
+    // changed every few seconds, and a continued import appends T3's own turns to
+    // the CLI transcript. Only imports nobody has continued can still sync, so
+    // every other bound session is skipped before its transcript is read.
+    const syncable = new Set<string>();
+    for (const entry of completedSources) {
+      const shell = yield* orchestrator
+        .getThreadShell(importedThreadId(entry.providerInstanceId, entry.providerSessionId))
+        .pipe(Effect.orElseSucceed(() => null));
+      if (shell !== null && shell.latestRunId === null && shell.activeRunId === null) {
+        syncable.add(entry.providerSessionId);
+      }
+    }
+    return { bound, skip: new Set([...bound].filter((id) => !syncable.has(id))) };
+  });
+
   const importRecentAgentThreads = Effect.fn("importRecentAgentThreadsV2")(function* (
     input: AgentSessionImportInput,
   ) {
@@ -211,7 +342,22 @@ const make = Effect.gen(function* () {
       }
       return payload.value.importedTranscripts ?? [];
     });
-    const outcomes = scanner.recentThreads(project.workspaceRoot, completedSources);
+    const sessionFilter =
+      input.providerSessionIds === undefined ? null : new Set(input.providerSessionIds);
+    const { skip: skipSessionIds } = yield* t3BoundSessions(runtimeRows, completedSources);
+    // A single-session import skips every other transcript the listing already
+    // parsed, so importing one session does not reread the whole project.
+    const skippedListedSources =
+      sessionFilter === null
+        ? []
+        : [...listedTranscripts.values()]
+            .filter((entry) => !sessionFilter.has(entry.thread.providerSessionId))
+            .map((entry) => entry.source);
+    const outcomes = scanner.recentThreads(
+      project.workspaceRoot,
+      [...completedSources, ...skippedListedSources],
+      { skipSessionIds },
+    );
     const importedThreadIds = new Set<ThreadId>();
     let importedCount = 0;
     let skippedCount = 0;
@@ -219,9 +365,14 @@ const make = Effect.gen(function* () {
     yield* Stream.runForEach(outcomes, (outcome) =>
       Effect.gen(function* () {
         if (outcome._tag === "Skipped") {
-          skippedCount += 1;
+          if (sessionFilter === null) skippedCount += 1;
           return;
         }
+        const outcomeSessionId =
+          outcome._tag === "Importable"
+            ? outcome.thread.providerSessionId
+            : outcome.source.providerSessionId;
+        if (sessionFilter !== null && !sessionFilter.has(outcomeSessionId)) return;
         const source = outcome.source;
         const threadId = ThreadId.make(
           `import:${source.providerInstanceId}:${source.providerSessionId}`,
@@ -260,6 +411,27 @@ const make = Effect.gen(function* () {
             }
             if (existing.value.thread.historyOrigin !== "v1_import") {
               return yield* new AgentSessionThreadModifiedError({ threadId });
+            }
+            // The CLI kept going after the import: append what it added, unless
+            // the thread was continued in T3 and the histories have diverged.
+            const projection = yield* orchestrator.getThreadProjection(threadId);
+            const fresh =
+              projection.thread.deletedAt === null && projection.thread.archivedAt === null
+                ? newTranscriptMessages(projection, thread.messages)
+                : [];
+            if (fresh.length > 0 && !isContinuedInT3(projection)) {
+              const offset = projection.messages.filter((message) =>
+                isImportedMessageId(threadId, message.id),
+              ).length;
+              const occurredAt = dateTime(thread.updatedAt);
+              yield* eventSink.write({
+                events: fresh.flatMap((message, index) =>
+                  messageEvents({ threadId, index: offset + index, message }).map((event) => ({
+                    ...event,
+                    occurredAt,
+                  })),
+                ),
+              });
             }
             yield* runtimes.recordImportedTranscript({ threadId, source });
             return true;
@@ -396,7 +568,104 @@ const make = Effect.gen(function* () {
     return { importedCount, skippedCount } satisfies AgentSessionImportResult;
   });
 
-  return { importRecentAgentThreads };
+  const listProjectAgentSessions = Effect.fn("listProjectAgentSessions")(function* (
+    input: AgentSessionListProjectSessionsInput,
+  ) {
+    const project = yield* projects.getById(input.projectId).pipe(
+      Effect.mapError((cause) => new AgentSessionScanError({ operation: "read-projects", cause })),
+      Effect.flatMap(
+        Option.match({
+          onNone: () =>
+            Effect.fail(new AgentSessionImportProjectNotFoundError({ projectId: input.projectId })),
+          onSome: Effect.succeed,
+        }),
+      ),
+    );
+    const runtimeRows = yield* runtimes.list().pipe(Effect.orElseSucceed(() => []));
+    // Imported transcripts are stored per project on the runtime row, so the
+    // rows for this project's workspace are the ones the import path recorded.
+    const projectRuntimes = runtimeRows.filter((runtime) => {
+      const payload = decodeImportedTranscriptPayload(runtime.runtimePayload);
+      return (
+        Option.isSome(payload) &&
+        payload.value.cwd !== undefined &&
+        normalizeProjectPathForComparison(payload.value.cwd) ===
+          normalizeProjectPathForComparison(project.workspaceRoot)
+      );
+    });
+    const completedSources = projectRuntimes.flatMap((runtime) =>
+      decodeImportedTranscriptPayload(runtime.runtimePayload).pipe(
+        Option.map((payload) => payload.importedTranscripts ?? []),
+        Option.getOrElse(() => []),
+      ),
+    );
+    const { bound: t3SessionIds, skip: skipSessionIds } = yield* t3BoundSessions(
+      runtimeRows,
+      completedSources,
+    );
+    const sessions: AgentSessionProjectSession[] = [];
+    // Real completed sources come first so an imported, unchanged file still
+    // resolves to its import record rather than to the listing cache.
+    const listed = new Map(
+      [...listedTranscripts.values()].map((entry) => [entry.source, entry.thread] as const),
+    );
+    yield* Stream.runForEach(
+      scanner.recentThreads(project.workspaceRoot, [...completedSources, ...listed.keys()], {
+        maxCandidateAgeMs: LIST_CANDIDATE_MAX_AGE_MS,
+        skipSessionIds,
+      }),
+      (outcome) =>
+        Effect.gen(function* () {
+          const cachedThread =
+            outcome._tag === "AlreadyImported" ? listed.get(outcome.source) : undefined;
+          let thread: AgentSessionScanner.AgentSessionThread;
+          if (outcome._tag === "Importable") {
+            thread = outcome.thread;
+            rememberListedTranscript({ source: outcome.source, thread });
+          } else if (cachedThread !== undefined) {
+            thread = cachedThread;
+          } else {
+            return;
+          }
+          const threadId = importedThreadId(thread.providerInstanceId, thread.providerSessionId);
+          const existing = yield* Effect.option(orchestrator.getThreadProjection(threadId));
+          const base = {
+            source: thread.source,
+            providerSessionId: thread.providerSessionId,
+            threadId,
+            title: thread.title,
+            updatedAt: thread.updatedAt,
+            messageCount: thread.messages.length,
+          };
+          if (Option.isNone(existing)) {
+            if (t3SessionIds.has(thread.providerSessionId)) return;
+            sessions.push({ ...base, state: "available", newMessageCount: 0 });
+            return;
+          }
+          const projection = existing.value;
+          if (
+            projection.thread.projectId !== input.projectId ||
+            projection.thread.deletedAt !== null ||
+            projection.thread.archivedAt !== null ||
+            projection.thread.historyOrigin !== "v1_import" ||
+            isContinuedInT3(projection)
+          ) {
+            return;
+          }
+          const fresh = newTranscriptMessages(projection, thread.messages);
+          if (fresh.length === 0) return;
+          sessions.push({
+            ...base,
+            title: projection.thread.title,
+            state: "updated",
+            newMessageCount: fresh.length,
+          });
+        }),
+    );
+    return { sessions };
+  });
+
+  return { importRecentAgentThreads, listProjectAgentSessions };
 });
 
 type AgentSessionImporterShape = Effect.Success<typeof make>;

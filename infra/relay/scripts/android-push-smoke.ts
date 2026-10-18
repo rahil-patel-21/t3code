@@ -1,6 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off - This developer command reads local credential files.
 import * as NodeFSP from "node:fs/promises";
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
+import branding from "@t3tools/contracts/branding.json" with { type: "json" };
 import * as Effect from "effect/Effect";
 import * as Clock from "effect/Clock";
 import * as Layer from "effect/Layer";
@@ -120,7 +121,7 @@ const main = Effect.gen(function* () {
             ? {
                 alert_id: `smoke-${now}`,
                 alert_title: title,
-                alert_body: "T3 Code Android push test",
+                alert_body: `${branding.name} Android push test`,
                 alert_path: device.deepLink ?? "/",
               }
             : {}),

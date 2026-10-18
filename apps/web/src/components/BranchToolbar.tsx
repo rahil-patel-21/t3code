@@ -15,10 +15,12 @@ import {
   type Ref,
   type MouseEvent as ReactMouseEvent,
   memo,
-  useImperativeHandle,
+  useCallback,
   useEffect,
   useEffectEvent,
+  useImperativeHandle,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -33,7 +35,6 @@ import {
   resolveCurrentWorkspaceLabel,
   resolveEnvModeLabel,
   resolveLockedWorkspaceLabel,
-  resolvePreviousWorktreeLabel,
   resolvePreviousWorktreeSeed,
   shouldShowEnvironmentIndicator,
 } from "./BranchToolbar.logic";
@@ -42,8 +43,6 @@ import {
   type BranchToolbarBranchSelectorHandle,
 } from "./BranchToolbarBranchSelector";
 import { BranchToolbarEnvironmentSelector } from "./BranchToolbarEnvironmentSelector";
-import { BranchToolbarEnvModeSelector } from "./BranchToolbarEnvModeSelector";
-import { PreviousWorktreeItemContent } from "./PreviousWorktreeItemContent";
 import { ThreadDetailsControl } from "./chat/ThreadDetailsControl";
 import {
   THREAD_DETAILS_PANEL_ICON_CLASS,
@@ -84,6 +83,10 @@ interface BranchToolbarProps {
   threadId: ThreadId;
   showGitControls: boolean;
   draftId?: DraftId;
+  /**
+   * Retained for callers that still thread a workspace-mode change through
+   * here. The composer no longer offers one, so the toolbar ignores it.
+   */
   onEnvModeChange: (mode: EnvMode) => void;
   envMode: EnvMode;
   activeThreadBranchOverride?: string | null;
@@ -151,10 +154,6 @@ interface RunContextSelectorProps {
   onEnvironmentChange: ((environmentId: EnvironmentId) => void) | undefined;
   effectiveEnvMode: EnvMode;
   activeWorktreePath: string | null;
-  onEnvModeChange: (mode: EnvMode) => void;
-  previousWorktreeLabel: string | null;
-  previousWorktreeBranch: string | null;
-  onUsePreviousWorktree: () => void;
 }
 
 const RunContextSelector = memo(function RunContextSelector({
@@ -172,10 +171,6 @@ const RunContextSelector = memo(function RunContextSelector({
   onEnvironmentChange,
   effectiveEnvMode,
   activeWorktreePath,
-  onEnvModeChange,
-  previousWorktreeLabel,
-  previousWorktreeBranch,
-  onUsePreviousWorktree,
 }: RunContextSelectorProps) {
   const composerFloatingLayerProps = useComposerMenuProps();
   const activeEnvironment =
@@ -291,10 +286,7 @@ const RunContextSelector = memo(function RunContextSelector({
         }
         aria-label={isPanel ? "Run context" : undefined}
         data-composer-context-control
-        data-composer-shortcut={[
-          showEnvironmentPicker && !envLocked ? "composer.host" : "",
-          !envModeLocked ? "composer.workspace" : "",
-        ].join(" ")}
+        data-composer-shortcut={showEnvironmentPicker && !envLocked ? "composer.host" : undefined}
       >
         {triggerContent}
         {!isPanel ? <ChevronDownIcon className="size-3 shrink-0 opacity-50" /> : null}
@@ -302,13 +294,7 @@ const RunContextSelector = memo(function RunContextSelector({
       <MenuPopup
         align="start"
         side={isPanel ? "bottom" : "top"}
-        className={
-          isPanel
-            ? "w-(--anchor-width)"
-            : previousWorktreeLabel
-              ? "w-[min(21rem,calc(100vw-2rem))]"
-              : undefined
-        }
+        className={isPanel ? "w-(--anchor-width)" : undefined}
         {...(!isPanel ? composerFloatingLayerProps : {})}
       >
         {showEnvironmentPicker && availableEnvironments && onEnvironmentChange ? (
@@ -360,41 +346,72 @@ const RunContextSelector = memo(function RunContextSelector({
         ) : null}
         <MenuGroup>
           <MenuGroupLabel>Workspace</MenuGroupLabel>
-          <MenuRadioGroup
-            value={effectiveEnvMode}
-            onValueChange={(value) => {
-              if (value === "previous-worktree") {
-                onUsePreviousWorktree();
-                return;
-              }
-              onEnvModeChange(value as EnvMode);
-            }}
-          >
-            <MenuRadioItem disabled={envModeLocked || forceNewWorktree} value="local" closeOnClick>
-              <span className="flex min-w-0 items-center gap-1.5">
-                {activeWorktreePath ? (
-                  <FolderGitIcon className="size-3" />
-                ) : (
-                  <FolderIcon className="size-3" />
-                )}
-                <MiddleTruncate value={resolveCurrentWorkspaceLabel(activeWorktreePath)} />
-              </span>
-            </MenuRadioItem>
-            <MenuRadioItem disabled={envModeLocked} value="worktree" closeOnClick>
-              <span className="flex min-w-0 items-center gap-1.5">
-                <FolderGit2Icon className="size-3" />
-                <span className="min-w-0 truncate">{resolveEnvModeLabel("worktree")}</span>
-              </span>
-            </MenuRadioItem>
-            {previousWorktreeLabel ? (
-              <MenuRadioItem disabled={envModeLocked} value="previous-worktree" closeOnClick>
-                <PreviousWorktreeItemContent branch={previousWorktreeBranch} />
-              </MenuRadioItem>
-            ) : null}
-          </MenuRadioGroup>
+          <div className="flex items-center gap-1.5 px-2 py-1.5 text-xs text-muted-foreground">
+            {activeWorktreePath ? (
+              <FolderGitIcon className="size-3" />
+            ) : effectiveEnvMode === "worktree" ? (
+              <FolderGit2Icon className="size-3" />
+            ) : (
+              <FolderIcon className="size-3" />
+            )}
+            <MiddleTruncate value={workspaceLabel} />
+          </div>
         </MenuGroup>
       </MenuPopup>
     </Menu>
+  );
+});
+
+/**
+ * Read-only workspace context for the wide composer strip.
+ *
+ * New threads always start in the current checkout, so there is no workspace
+ * choice to offer here. The label stays because the workspace is still real
+ * state: a thread already attached to a worktree, or a multi-model fan-out that
+ * forces a worktree per model, must keep saying so.
+ */
+const BranchToolbarWorkspaceStatus = memo(function BranchToolbarWorkspaceStatus({
+  forceNewWorktree,
+  envModeLocked,
+  effectiveEnvMode,
+  activeWorktreePath,
+}: {
+  forceNewWorktree: boolean;
+  envModeLocked: boolean;
+  effectiveEnvMode: EnvMode;
+  activeWorktreePath: string | null;
+}) {
+  const label = forceNewWorktree
+    ? resolveEnvModeLabel("worktree")
+    : envModeLocked
+      ? resolveLockedWorkspaceLabel(activeWorktreePath, effectiveEnvMode)
+      : effectiveEnvMode === "worktree"
+        ? resolveEnvModeLabel("worktree")
+        : resolveCurrentWorkspaceLabel(activeWorktreePath);
+
+  const row = (
+    <span
+      className="inline-flex h-7 min-w-0 items-center gap-1 border border-transparent px-1.75 font-normal text-muted-foreground/70 text-xs sm:h-6"
+      data-composer-context-control
+    >
+      {activeWorktreePath ? (
+        <FolderGitIcon className="size-3" />
+      ) : effectiveEnvMode === "worktree" ? (
+        <FolderGit2Icon className="size-3" />
+      ) : (
+        <FolderIcon className="size-3" />
+      )}
+      <ComposerContextLabel>{label}</ComposerContextLabel>
+    </span>
+  );
+
+  return (
+    <Tooltip>
+      <TooltipTrigger render={row} />
+      <TooltipPopup>
+        {forceNewWorktree ? "Each model starts in its own worktree." : label}
+      </TooltipPopup>
+    </Tooltip>
   );
 });
 
@@ -566,7 +583,6 @@ export const BranchToolbar = memo(function BranchToolbar({
   threadId,
   showGitControls,
   draftId,
-  onEnvModeChange,
   envMode,
   activeThreadBranchOverride,
   onActiveThreadBranchOverrideChange,
@@ -607,16 +623,17 @@ export const BranchToolbar = memo(function BranchToolbar({
   const projectRefsForWorktreeLookup =
     canUsePreviousWorktree && activeProjectRef ? [activeProjectRef] : [];
   const projectThreads = useThreadShellsForProjectRefs(projectRefsForWorktreeLookup);
-  const previousWorktreeSeed = canUsePreviousWorktree
-    ? resolvePreviousWorktreeSeed({
-        threads: projectThreads,
-        currentWorktreePath: activeWorktreePath,
-      })
-    : null;
-  const previousWorktreeLabel = previousWorktreeSeed
-    ? resolvePreviousWorktreeLabel(previousWorktreeSeed)
-    : null;
-  const onUsePreviousWorktree = () => {
+  const previousWorktreeSeed = useMemo(
+    () =>
+      canUsePreviousWorktree
+        ? resolvePreviousWorktreeSeed({
+            threads: projectThreads,
+            currentWorktreePath: activeWorktreePath,
+          })
+        : null,
+    [activeWorktreePath, canUsePreviousWorktree, projectThreads],
+  );
+  const onUsePreviousWorktree = useCallback(() => {
     if (!previousWorktreeSeed || !activeProjectRef) return;
     setDraftThreadContext(draftId ?? threadRef, {
       branch: previousWorktreeSeed.branch,
@@ -624,7 +641,7 @@ export const BranchToolbar = memo(function BranchToolbar({
       envMode: "worktree",
       projectRef: activeProjectRef,
     });
-  };
+  }, [activeProjectRef, draftId, previousWorktreeSeed, setDraftThreadContext, threadRef]);
 
   useImperativeHandle(
     ref,
@@ -678,10 +695,6 @@ export const BranchToolbar = memo(function BranchToolbar({
             onEnvironmentChange={onEnvironmentChange}
             effectiveEnvMode={effectiveEnvMode}
             activeWorktreePath={activeWorktreePath}
-            onEnvModeChange={onEnvModeChange}
-            previousWorktreeLabel={previousWorktreeLabel}
-            previousWorktreeBranch={previousWorktreeSeed?.branch ?? null}
-            onUsePreviousWorktree={onUsePreviousWorktree}
           />
         ) : null}
         {panelSection !== "workspace" ? (
@@ -732,10 +745,6 @@ export const BranchToolbar = memo(function BranchToolbar({
             onEnvironmentChange={onEnvironmentChange}
             effectiveEnvMode={effectiveEnvMode}
             activeWorktreePath={activeWorktreePath}
-            onEnvModeChange={onEnvModeChange}
-            previousWorktreeLabel={previousWorktreeLabel}
-            previousWorktreeBranch={previousWorktreeSeed?.branch ?? null}
-            onUsePreviousWorktree={onUsePreviousWorktree}
           />
         </div>
       ) : null}
@@ -767,15 +776,11 @@ export const BranchToolbar = memo(function BranchToolbar({
             </>
           )}
           {showGitControls ? (
-            <BranchToolbarEnvModeSelector
+            <BranchToolbarWorkspaceStatus
               forceNewWorktree={forceNewWorktree}
-              envLocked={envModeLocked}
+              envModeLocked={envModeLocked}
               effectiveEnvMode={effectiveEnvMode}
               activeWorktreePath={activeWorktreePath}
-              onEnvModeChange={onEnvModeChange}
-              previousWorktreeLabel={previousWorktreeLabel}
-              previousWorktreeBranch={previousWorktreeSeed?.branch ?? null}
-              onUsePreviousWorktree={onUsePreviousWorktree}
             />
           ) : null}
         </div>

@@ -21,6 +21,7 @@ export const MessageCopyButton = memo(function MessageCopyButton({
   className,
 }: {
   text: string;
+  /** Names what is copied, for the tooltip and for assistive technology. */
   label?: string;
   icon?: typeof Copy;
   extraFlavors?: Readonly<Record<string, string>>;

@@ -140,6 +140,8 @@ export default function ProjectScriptsControl({
       ...(readEnvironmentScope(environmentId, AuthSettingsWriteScope) ? { keybinding: null } : {}),
       previewUrl: fileScript.previewUrl ?? null,
       autoOpenPreview: fileScript.previewUrl ? (fileScript.autoOpenPreview ?? false) : false,
+      previewTarget: fileScript.previewTarget ?? "app",
+      runInBackground: fileScript.runInBackground ?? false,
     };
     const result = await onAddScript(payload);
     if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {

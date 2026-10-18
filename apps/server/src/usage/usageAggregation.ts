@@ -1,4 +1,17 @@
 // @effect-diagnostics globalDate:off
+/**
+ * Folds parsed transcript records into `(day, hourStart?, provider, model,
+ * project?)` buckets.
+ *
+ * `Intl.DateTimeFormat` is the only reliable way to resolve a wall-clock day in
+ * an arbitrary IANA zone, and it takes a `Date`. That is why the raw `Date`
+ * construction is allowed here; nothing in this module reads the clock.
+ *
+ * Pure, so the bucketing and de-duplication rules are testable without touching
+ * the filesystem or the network.
+ *
+ * @module usageAggregation
+ */
 import type {
   UsageBucket,
   UsageCategoryCost,
@@ -117,6 +130,7 @@ export class UsageAggregator {
     readonly provider: string;
     readonly model: string;
     readonly source: string;
+    readonly project: string;
     readonly bucket: MutableBucket;
   } | null = null;
   #duplicatesDropped = 0;
@@ -138,7 +152,13 @@ export class UsageAggregator {
     }
   }
 
-  add(input: UsageRecord, sourcePath?: string): boolean {
+  /**
+   * Folds one record in from `sourcePath`, credited to `project` (`""` when
+   * unknown). Returns whether it actually contributed, so callers can derive
+   * per-window facts (distinct sessions, for one) from the records that landed
+   * rather than everything the mtime prefilter happened to admit.
+   */
+  add(input: UsageRecord, sourcePath?: string, project = ""): boolean {
     const record = this.#mapModel(input);
     if (record.dedupeKey !== null) {
       if (this.#seen.has(record.dedupeKey)) {
@@ -170,7 +190,14 @@ export class UsageAggregator {
       this.#hourlyWindow === null
         ? -1
         : Math.floor((record.timestampMs - this.#hourlyWindow.sinceTimeMs) / HOUR_MS);
-    const bucket = this.#bucketFor(day, hourIndex, record.provider, record.model, sourcePath ?? "");
+    const bucket = this.#bucketFor(
+      day,
+      hourIndex,
+      record.provider,
+      record.model,
+      sourcePath ?? "",
+      project,
+    );
 
     const priced = priceUsage(this.#options.rates, record, this.#options.priceOverrides);
 
@@ -228,6 +255,7 @@ export class UsageAggregator {
     provider: string,
     model: string,
     source: string,
+    project: string,
   ): MutableBucket {
     const last = this.#lastBucket;
     if (
@@ -236,14 +264,15 @@ export class UsageAggregator {
       last.hourIndex === hourIndex &&
       last.provider === provider &&
       last.model === model &&
-      last.source === source
+      last.source === source &&
+      last.project === project
     ) {
       return last.bucket;
     }
     const window = this.#hourlyWindow;
     const hourStart =
       window === null ? "" : new Date(window.sinceTimeMs + hourIndex * HOUR_MS).toISOString();
-    const key = `${day}\u0000${hourStart}\u0000${provider}\u0000${model}\u0000${source}`;
+    const key = `${day}\u0000${hourStart}\u0000${provider}\u0000${model}\u0000${source}\u0000${project}`;
     let bucket = this.#buckets.get(key);
     if (bucket === undefined) {
       bucket = {
@@ -261,14 +290,14 @@ export class UsageAggregator {
       };
       this.#buckets.set(key, bucket);
     }
-    this.#lastBucket = { day, hourIndex, provider, model, source, bucket };
+    this.#lastBucket = { day, hourIndex, provider, model, source, project, bucket };
     return bucket;
   }
 
   finish(): AggregateResult {
     const buckets: UsageBucket[] = [];
     for (const [key, bucket] of this.#buckets) {
-      const [day = "", hourStart = "", provider = "", model = "", sourcePath = ""] =
+      const [day = "", hourStart = "", provider = "", model = "", sourcePath = "", project = ""] =
         key.split("\u0000");
       const category = bucket.categoryCostUsd;
       const fastCostUsd = roundUsd(bucket.fastCostUsd);
@@ -279,6 +308,7 @@ export class UsageAggregator {
         ...(hourStart === "" ? {} : { hourStart }),
         provider: provider as UsageBucket["provider"],
         model,
+        ...(project === "" ? {} : { project }),
         ...(sourcePath === "" ? {} : { sourcePath }),
         totals: { ...bucket.totals },
         costUsd: bucket.costUsd,
@@ -307,7 +337,8 @@ export class UsageAggregator {
         a.day.localeCompare(b.day) ||
         (a.hourStart ?? "").localeCompare(b.hourStart ?? "") ||
         a.provider.localeCompare(b.provider) ||
-        a.model.localeCompare(b.model),
+        a.model.localeCompare(b.model) ||
+        (a.project ?? "").localeCompare(b.project ?? ""),
     );
 
     return {

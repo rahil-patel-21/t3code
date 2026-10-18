@@ -1,6 +1,7 @@
 import { NATIVE_WORKSPACE_COLUMNS_SUPPORTED } from "../native/NativeWorkspaceColumns";
 import Constants from "expo-constants";
 import type { NativeStackNavigationOptions } from "@react-navigation/native-stack";
+import { APP_BASE_NAME } from "@t3tools/contracts";
 import { useState } from "react";
 import { Platform, View } from "react-native";
 
@@ -41,7 +42,7 @@ export function CompactBrandTitle(
         props.fit && showStage ? (event) => setFullWidth(event.nativeEvent.layout.width) : undefined
       }
       aria-level={1}
-      accessibilityLabel={props.accessibilityLabel ?? "T3 Code, Threads"}
+      accessibilityLabel={props.accessibilityLabel ?? `${APP_BASE_NAME}, Threads`}
       accessible
       role="heading"
       className="flex-row items-center gap-1.5"

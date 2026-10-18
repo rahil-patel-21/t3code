@@ -1,4 +1,5 @@
 import {
+  APP_BASE_NAME,
   EnvironmentAuthInvalidError,
   type PullRequestDiffInput,
   type PullRequestDiffResult,
@@ -28,7 +29,7 @@ export class PullRequestDiffCredentialRejectedError extends Schema.TaggedError<P
   },
 ) {
   override get message(): string {
-    return "This environment session is no longer valid (invalid_credential). Refresh the page or quit and reopen T3 Code.";
+    return `This environment session is no longer valid (invalid_credential). Refresh the page or quit and reopen ${APP_BASE_NAME}.`;
   }
 }
 

@@ -168,6 +168,27 @@ export const ProviderAdapterV2Event = Schema.Union([
 ]);
 export type ProviderAdapterV2Event = typeof ProviderAdapterV2Event.Type;
 
+/**
+ * The provider was asked to do something it does not implement, such as
+ * `/compact` on an adapter with no `compactThread`. Retrying cannot help, so
+ * this is its own error rather than a turn-start failure: a bare string cause
+ * carries no tag, so nothing downstream can map it and the user is left with
+ * generic retry advice.
+ */
+export class ProviderCommandUnsupportedError extends Schema.TaggedError<ProviderCommandUnsupportedError>()(
+  "ProviderCommandUnsupportedError",
+  {
+    driver: ProviderDriverKind,
+    /** Named in the message, e.g. `conversation compaction (/compact)`. */
+    command: Schema.String,
+    cause: Schema.optional(Schema.Defect()),
+  },
+) {
+  override get message(): string {
+    return `${this.driver} does not support ${this.command}.`;
+  }
+}
+
 export class ProviderAdapterCapabilitiesError extends Schema.TaggedError<ProviderAdapterCapabilitiesError>()(
   "ProviderAdapterCapabilitiesError",
   {

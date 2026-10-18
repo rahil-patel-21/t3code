@@ -299,6 +299,8 @@ function usageCandidates(
         const record: UsageRecord = {
           provider: "antigravity",
           sessionId,
+          // Antigravity's trajectory store does not record the working directory.
+          cwd: "",
           timestampMs: entry.timestampMs ?? trajectoryTimestamp ?? fallbackTimestamp,
           model:
             MODEL_IDS[numberAt(usage, 1)] ||

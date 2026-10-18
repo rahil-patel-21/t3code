@@ -89,7 +89,7 @@ import { UsageShareBar } from "./UsageShareBar";
 import {
   costTypeSegments,
   modelShare,
-  sortModelsByTokens,
+  sortByTokens,
   speedCostSegments,
   tokenTypeSegments,
 } from "./usageBreakdown";
@@ -623,7 +623,7 @@ function UsageOverview({
   readonly onCursorEnabled: () => void;
   readonly onSelectModel: (key: string) => void;
 }) {
-  const [breakdown, setBreakdown] = useState<"model" | "time">("model");
+  const [breakdown, setBreakdown] = useState<"model" | "project" | "time">("model");
   const shownHourly = shownWindow.resolution === "hour";
   const loading = usageLoading(showingKept, selectedEnvironments, refreshingUsage, hiddenProviders);
   // A primitive copy: reading `loading.partial` in the JSX would keep `loading` alive
@@ -663,11 +663,15 @@ function UsageOverview({
     shownHourly ? merged.hourly : merged.daily
   ).toReversed();
   const breakdownModels =
-    breakdown === "model" && metric === "tokens"
-      ? sortModelsByTokens(merged.models)
-      : merged.models;
+    metric === "tokens" ? sortByTokens(merged.models) : merged.models;
+  const breakdownProjects =
+    metric === "tokens" ? sortByTokens(merged.projects) : merged.projects;
   const breakdownPeak = breakdownModels.reduce(
     (peak, model) => Math.max(peak, metric === "tokens" ? model.totalTokens : model.costUsd),
+    0,
+  );
+  const projectPeak = breakdownProjects.reduce(
+    (peak, project) => Math.max(peak, metric === "tokens" ? project.totalTokens : project.costUsd),
     0,
   );
   const cursorInsertAt =
@@ -900,12 +904,15 @@ function UsageOverview({
             value={[breakdown]}
             onValueChange={(next) => {
               const value = next[0];
-              if (value === "model" || value === "time") setBreakdown(value);
+              if (value === "model" || value === "project" || value === "time") {
+                setBreakdown(value);
+              }
             }}
           >
             {(
               [
                 { value: "model", label: "Model" },
+                { value: "project", label: "Project" },
                 { value: "time", label: shownHourly ? "Hour" : "Day" },
               ] as const
             ).map((option) => (
@@ -916,25 +923,27 @@ function UsageOverview({
           </ToggleGroup>
         </div>
 
-        {breakdown === "model" ? (
+        {breakdown !== "time" ? (
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border text-right text-xs text-muted-foreground">
                 <th className="py-2 pr-3 text-left font-normal">#</th>
-                <th className="w-full py-2 text-left font-normal">Model</th>
+                <th className="w-full py-2 text-left font-normal">
+                  {breakdown === "model" ? "Model" : "Project"}
+                </th>
                 <th className="py-2 pl-6 font-normal">Cost</th>
                 <th className="hidden py-2 pl-6 font-normal sm:table-cell">Share</th>
                 <th className="py-2 pl-6 font-normal">Tokens</th>
               </tr>
             </thead>
             <tbody>
-              {breakdownModels.length === 0 ? (
+              {(breakdown === "model" ? breakdownModels : breakdownProjects).length === 0 ? (
                 <tr>
                   <td colSpan={5} className="py-6 text-center text-muted-foreground">
                     No activity in this window.
                   </td>
                 </tr>
-              ) : (
+              ) : breakdown === "model" ? (
                 breakdownModels.map((model, index) => {
                   const key = `${model.provider}:${model.model}`;
                   const value = metric === "tokens" ? model.totalTokens : model.costUsd;
@@ -955,25 +964,20 @@ function UsageOverview({
                           <ProviderMark provider={model.provider} className="size-3.5" />
                           {model.model}
                         </button>
-                        <div aria-hidden className={cn("mt-1.5 h-0.5 max-w-48", rowFigures)}>
+                        <div aria-hidden className="mt-1.5 h-0.5 max-w-48">
                           <div
-                            className="h-full rounded-full"
+                            className="h-full rounded-full bg-accent-foreground/40"
                             style={{
                               width:
                                 value > 0 && breakdownPeak > 0
                                   ? `max(0.5rem, ${(value / breakdownPeak) * 100}%)`
                                   : 0,
-                              backgroundColor: PROVIDER_PRESENTATION[model.provider].color,
                             }}
                           />
                         </div>
                       </td>
                       <td className={cn("py-2.5 pl-6 text-foreground", rowFigures)}>
-                        {isModelCostUnknown(model) ? (
-                          <span className="text-muted-foreground">Unpriced</span>
-                        ) : (
-                          formatUsd(model.costUsd)
-                        )}
+                        {formatUsd(model.costUsd)}
                       </td>
                       <td className={cn("hidden py-2.5 pl-6 sm:table-cell", rowFigures)}>
                         {share === null ? "" : formatPercent(share)}
@@ -981,6 +985,55 @@ function UsageOverview({
                       <td className={cn("py-2.5 pl-6", rowFigures)}>
                         {formatTokens(model.totalTokens)}
                       </td>
+                    </tr>
+                  );
+                })
+              ) : (
+                breakdownProjects.map((project, index) => {
+                  const value = metric === "tokens" ? project.totalTokens : project.costUsd;
+                  const costUnknown = isModelCostUnknown(project);
+                  return (
+                    <tr
+                      key={project.project ?? "unknown"}
+                      className="border-b border-border/50 text-right whitespace-nowrap text-muted-foreground tabular-nums transition-colors hover:bg-muted/50"
+                    >
+                      <td className="py-2.5 pr-3 text-left text-xs">{index + 1}</td>
+                      <td className="py-2.5 text-left whitespace-normal">
+                        {/* A project spans providers, so it gets no provider mark and
+                            a neutral bar rather than one provider's color. */}
+                        {project.project === null ? (
+                          <span className="text-muted-foreground">Unknown</span>
+                        ) : (
+                          <Tooltip>
+                            <TooltipTrigger render={<span className="truncate text-foreground" />}>
+                              {project.project}
+                            </TooltipTrigger>
+                            <TooltipPopup variant="code">{project.project}</TooltipPopup>
+                          </Tooltip>
+                        )}
+                        <div aria-hidden className="mt-1.5 h-0.5 max-w-48">
+                          <div
+                            className="h-full rounded-full bg-muted-foreground"
+                            style={{
+                              width:
+                                value > 0 && projectPeak > 0
+                                  ? `max(0.5rem, ${(value / projectPeak) * 100}%)`
+                                  : 0,
+                            }}
+                          />
+                        </div>
+                      </td>
+                      <td className="py-2.5 pl-6 text-foreground">
+                        {costUnknown ? (
+                          <span className="text-muted-foreground">Unpriced</span>
+                        ) : (
+                          formatUsd(project.costUsd)
+                        )}
+                      </td>
+                      <td className="hidden py-2.5 pl-6 sm:table-cell">
+                        {costUnknown ? "" : formatPercent(project.costShare)}
+                      </td>
+                      <td className="py-2.5 pl-6">{formatTokens(project.totalTokens)}</td>
                     </tr>
                   );
                 })

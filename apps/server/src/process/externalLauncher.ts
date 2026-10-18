@@ -234,6 +234,36 @@ function resolveWindowsBrowserLaunch(
   };
 }
 
+// macOS `open <file>` uses the file type's default app (often an editor for
+// HTML), so resolve the default https handler and open the file with it.
+const MAC_DEFAULT_BROWSER_SCRIPT =
+  'ObjC.import("AppKit"); $.NSWorkspace.sharedWorkspace.URLForApplicationToOpenURL($.NSURL.URLWithString("https://example.com")).path.js';
+
+// ponytail: Windows and Linux open the file with its type's default app, which
+// is the browser for HTML unless the user reassigned it; resolve the https
+// handler there too if that bites.
+function defaultBrowserFileLaunch(
+  target: string,
+  platform: NodeJS.Platform,
+  env: NodeJS.ProcessEnv,
+): EditorLaunch {
+  if (platform === "darwin") {
+    return {
+      editor: "file-manager",
+      target,
+      command: "sh",
+      args: [
+        "-c",
+        'open -a "$(osascript -l JavaScript -e "$0")" "$1"',
+        MAC_DEFAULT_BROWSER_SCRIPT,
+        target,
+      ],
+    };
+  }
+  const launch = buildBrowserLaunch(target, platform, env);
+  return { editor: "file-manager", target, command: launch.command, args: launch.args };
+}
+
 function hasGraphicalLinuxSession(env: NodeJS.ProcessEnv): boolean {
   return [env.DISPLAY, env.WAYLAND_DISPLAY].some(
     (value) => value !== undefined && value.trim().length > 0,
@@ -544,6 +574,10 @@ const resolveEditorLaunch = Effect.fn("resolveEditorLaunch")(function* (
 
   if (input.reveal === true) {
     return yield* resolveFileManagerRevealLaunch(input.cwd, platform, env, command);
+  }
+
+  if (input.browser === true) {
+    return defaultBrowserFileLaunch(input.cwd, platform, env);
   }
 
   return {

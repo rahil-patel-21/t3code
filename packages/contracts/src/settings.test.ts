@@ -682,15 +682,21 @@ describe("ClientSettings sidebar", () => {
   });
 });
 
-describe("ClientSettings context window meter", () => {
-  it("defaults off and preserves an explicit legacy opt-in", () => {
-    expect(decodeClientSettings({}).contextWindowMeterEnabled).toBe(false);
+describe("ClientSettings context window indicator", () => {
+  it("drops the retired meter key, turning the indicator on for everyone", () => {
+    const decoded = decodeClientSettings({ contextWindowMeterEnabled: false });
+    expect(decoded.contextWindowIndicatorEnabled).toBe(true);
+    expect(decoded).not.toHaveProperty("contextWindowMeterEnabled");
+  });
+
+  it("preserves an explicit opt-out", () => {
     expect(
-      decodeClientSettings({ contextWindowMeterEnabled: true }).contextWindowMeterEnabled,
-    ).toBe(true);
+      decodeClientSettings({ contextWindowIndicatorEnabled: false }).contextWindowIndicatorEnabled,
+    ).toBe(false);
     expect(
-      decodeClientSettingsPatch({ contextWindowMeterEnabled: true }).contextWindowMeterEnabled,
-    ).toBe(true);
+      decodeClientSettingsPatch({ contextWindowIndicatorEnabled: false })
+        .contextWindowIndicatorEnabled,
+    ).toBe(false);
   });
 });
 

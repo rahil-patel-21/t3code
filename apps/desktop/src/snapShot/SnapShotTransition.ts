@@ -1,3 +1,4 @@
+import { APP_BASE_NAME } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import type * as Fiber from "effect/Fiber";
 
@@ -113,7 +114,7 @@ function createWindow(
     resizable: false,
     show: false,
     skipTaskbar: true,
-    title: "T3 Code Snapshot Animation",
+    title: `${APP_BASE_NAME} Snapshot Animation`,
     transparent: true,
     webPreferences: {
       backgroundThrottling: false,

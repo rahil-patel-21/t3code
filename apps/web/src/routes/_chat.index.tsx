@@ -20,7 +20,7 @@ import {
   useThreadShells,
 } from "../state/entities";
 import { useEnvironments } from "../state/environments";
-import { APP_DISPLAY_NAME } from "~/branding";
+import { APP_BASE_NAME, APP_DISPLAY_NAME } from "~/branding";
 import { hasCloudPublicConfig } from "~/cloud/publicConfig";
 
 function ChatIndexRouteView() {
@@ -144,10 +144,11 @@ function HostedStaticOnboardingState() {
               <div className="mx-auto mb-5 flex size-11 items-center justify-center rounded-xl border border-border/70 bg-background/70 text-muted-foreground">
                 <LinkIcon className="size-5" />
               </div>
-              <EmptyTitle>Connect to a computer running T3 Code</EmptyTitle>
+              <EmptyTitle>Connect to a computer running {APP_BASE_NAME}</EmptyTitle>
               <EmptyDescription>
-                This app connects to T3 Code running on your computer or a server. Start the T3 Code
-                desktop app or command-line server on that machine and keep it running.
+                This app connects to {APP_BASE_NAME} running on your computer or a server. Start the{" "}
+                {APP_BASE_NAME} desktop app or command-line server on that machine and keep it
+                running.
               </EmptyDescription>
               <EmptyDescription>{description}</EmptyDescription>
               <div className="mt-6 flex justify-center">

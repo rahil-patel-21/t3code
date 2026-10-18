@@ -136,6 +136,8 @@ function parseGrokRecord(parsed: unknown): readonly UsageRecord[] {
         timestampMs,
         model: "grok",
         sessionId,
+        // Grok's aggregate records do not carry a working directory.
+        cwd: "",
         totals: grokTotalsToUsage(topLevel),
         reportedCostUsd: grokCostTicksToUsd(topLevel.costUsdTicks),
         speed: "standard",
@@ -175,6 +177,7 @@ function parseGrokRecord(parsed: unknown): readonly UsageRecord[] {
       timestampMs,
       model: entry.model,
       sessionId,
+      cwd: "",
       totals,
       reportedCostUsd,
       speed: "standard",

@@ -29,6 +29,7 @@ function record(overrides: Partial<UsageRecord> = {}): UsageRecord {
     timestampMs: Date.parse("2026-08-07T04:05:13.944Z"),
     model: "claude-fable-5",
     sessionId: "session-a",
+    cwd: "",
     totals: {
       uncachedInputTokens: 100,
       cachedInputTokens: 1000,

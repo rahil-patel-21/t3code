@@ -2372,7 +2372,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     modelOptionsByInstance,
   );
   const reserveContextWindowMeter = shouldReserveContextWindowMeter({
-    meterEnabled: settings.contextWindowMeterEnabled,
+    meterEnabled: settings.contextWindowIndicatorEnabled,
     detailLoading: props.threadSyncPhase === "loading",
     threadStarted: threadShellHasStarted(props.activeThreadShell),
     providerReportsContextWindow: selectedProviderStatus
@@ -2605,12 +2605,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     if (!composerTrigger) return [];
     if (composerTrigger.kind === "path") {
       return [
-        ...matchComposerThreadItems({
-          shells: environmentThreadShells,
-          environmentId,
-          excludeThreadId: activeThreadId,
-          query: composerTrigger.query,
-        }),
         ...workspaceEntries.entries.map((entry) => ({
           id: `path:${entry.kind}:${entry.path}`,
           type: "path" as const,
@@ -2619,6 +2613,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           label: basenameOfPath(entry.path),
           description: entry.path.slice(0, Math.max(0, entry.path.lastIndexOf("/"))),
         })),
+        ...matchComposerThreadItems({
+          shells: environmentThreadShells,
+          environmentId,
+          excludeThreadId: activeThreadId,
+          query: composerTrigger.query,
+        }),
       ];
     }
     if (composerTrigger.kind === "slash-command") {
@@ -7051,7 +7051,17 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 )}
 
               <div
-                className={cn("relative", isComposerResting && "flex min-w-0 items-center gap-1")}
+                className={cn(
+                  "relative",
+                  isComposerResting && "flex min-w-0 items-center gap-1",
+                  isComposerResting &&
+                    ((settings.contextWindowIndicatorEnabled && activeContextWindow) ||
+                    reserveContextWindowMeter
+                      ? "pr-28"
+                      : showComposerAttachAction
+                        ? "pr-20"
+                        : "pr-12"),
+                )}
                 style={
                   isComposerResting && restingActionsWidth !== null
                     ? { paddingRight: `calc(${restingActionsWidth}px + 1rem)` }
@@ -7284,7 +7294,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     compact={isComposerResting || isComposerPrimaryActionsCompact}
                     canOperateThread={canOperateThread}
                     activeContextWindow={
-                      settings.contextWindowMeterEnabled ? activeContextWindow : null
+                      settings.contextWindowIndicatorEnabled ? activeContextWindow : null
                     }
                     reserveContextWindowMeter={reserveContextWindowMeter}
                     activeThreadModelDisplayName={activeThreadModelDisplayName}

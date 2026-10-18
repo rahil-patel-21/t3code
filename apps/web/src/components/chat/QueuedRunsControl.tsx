@@ -24,6 +24,7 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import { isImageAttachment, type ChatMessage } from "../../types";
 import { cn } from "~/lib/utils";
 import { ComposerBanner } from "./ComposerBanner";
+import type { ExpandedImagePreview } from "./ExpandedImagePreview";
 import { Button } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
@@ -37,6 +38,7 @@ export interface EditQueuedRunRequest {
 interface QueuedRowThumbnail {
   readonly key: string;
   readonly name: string;
+  readonly mimeType: string;
   readonly url: string | null;
 }
 
@@ -75,6 +77,8 @@ export function QueuedRunsControl({
   readonly editingRunId: RunId | null;
   readonly onEditQueuedRun: (request: EditQueuedRunRequest) => void;
   readonly onCancelEdit: () => void;
+  /** Opens the shared image dialog for a thumbnail tapped on a queued row. */
+  readonly onExpandImage: (preview: ExpandedImagePreview) => void;
 }) {
   const projection = useThreadProjection(
     scopeThreadRef(props.environmentId, props.threadId),
@@ -128,6 +132,7 @@ export function QueuedRunsControl({
         .map<QueuedRowThumbnail>((attachment) => ({
           key: attachment.id,
           name: attachment.name,
+          mimeType: attachment.mimeType,
           url: queuedImageUrlById.get(attachment.id) ?? null,
         })),
       pending: false,
@@ -144,6 +149,7 @@ export function QueuedRunsControl({
         .map<QueuedRowThumbnail>((attachment) => ({
           key: attachment.id,
           name: attachment.name,
+          mimeType: attachment.mimeType,
           url: attachment.previewUrl ?? null,
         })),
       pending: true,
@@ -348,23 +354,75 @@ export function QueuedRunsControl({
                     {item.thumbnails.length > 0 ? (
                       <span className="flex shrink-0 items-center gap-0.5">
                         {item.thumbnails.map((thumbnail) => (
-                          <span
-                            key={thumbnail.key}
-                            className="size-4 overflow-hidden rounded border border-border/70 bg-background"
-                          >
-                            {thumbnail.url ? (
-                              <img
-                                src={thumbnail.url}
-                                alt={thumbnail.name}
-                                className="size-full object-cover"
-                              />
-                            ) : (
-                              <span
-                                aria-label={thumbnail.name}
-                                className="block size-full bg-muted/60"
-                              />
-                            )}
-                          </span>
+                          <Tooltip key={thumbnail.key}>
+                            <TooltipTrigger
+                              render={
+                                <button
+                                  type="button"
+                                  aria-label={`Preview ${thumbnail.name}`}
+                                  className="size-4 overflow-hidden rounded border border-border/70 bg-background"
+                                  // The row itself is draggable, so swallow the pointer
+                                  // press that would otherwise arm a drag instead.
+                                  onPointerDown={(event) => event.stopPropagation()}
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    // Only loaded thumbnails can open: the dialog needs
+                                    // a real src, and the asset resource covers the
+                                    // row's other images so arrows step between them.
+                                    const images = item.thumbnails.flatMap((candidate) =>
+                                      candidate.url
+                                        ? [
+                                            {
+                                              attachmentId: candidate.key,
+                                              src: candidate.url,
+                                              name: candidate.name,
+                                              actionsSource: {
+                                                kind: "image" as const,
+                                                name: candidate.name,
+                                                src: candidate.url,
+                                                asset: {
+                                                  environmentId: props.environmentId,
+                                                  resource: {
+                                                    _tag: "attachment" as const,
+                                                    attachmentId: candidate.key,
+                                                    fileName: candidate.name,
+                                                    mimeType: candidate.mimeType,
+                                                  },
+                                                },
+                                              },
+                                            },
+                                          ]
+                                        : [],
+                                    );
+                                    const index = images.findIndex(
+                                      (image) => image.attachmentId === thumbnail.key,
+                                    );
+                                    if (index < 0) return;
+                                    props.onExpandImage({
+                                      images: images.map(
+                                        ({ attachmentId: _attachmentId, ...image }) => image,
+                                      ),
+                                      index,
+                                    });
+                                  }}
+                                />
+                              }
+                            >
+                              {thumbnail.url ? (
+                                <img
+                                  src={thumbnail.url}
+                                  alt={thumbnail.name}
+                                  className="size-full object-cover"
+                                />
+                              ) : (
+                                <span
+                                  aria-label={thumbnail.name}
+                                  className="block size-full bg-muted/60"
+                                />
+                              )}
+                            </TooltipTrigger>
+                            <TooltipPopup side="top">{thumbnail.name}</TooltipPopup>
+                          </Tooltip>
                         ))}
                       </span>
                     ) : null}

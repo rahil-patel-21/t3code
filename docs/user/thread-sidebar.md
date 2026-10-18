@@ -1,14 +1,14 @@
 # Working with threads
 
-Use a new thread for a separate task. Choose **New worktree** when its code changes
-need a separate branch and working directory.
+Use a new thread for a separate task. New threads run in the project's current
+checkout.
 
 ## Start a thread
 
 On web and desktop, a new thread keeps the current project and carries your model
 and mode selections, unless the destination project has its own model default.
-Its branch and workspace mode come from your configured defaults. To continue in
-an existing worktree, use **New thread in this worktree** from the branch toolbar.
+To continue in an existing worktree, pick a branch that is checked out there from
+the branch toolbar.
 
 When you change a new thread's project, T3 Code stays in the current environment
 if that project exists there. Otherwise it selects an environment that has it.
@@ -35,8 +35,7 @@ directory itself sits inside a Git checkout.
 
 In a desktop browser or the desktop app, press `Cmd+Enter` on macOS or `Ctrl+Enter`
 on Windows and Linux to start a new thread and immediately open another draft. The
-next draft keeps the workspace mode and base branch you selected. With **New
-worktree**, each background submission creates its own worktree.
+next draft keeps the branch you selected.
 
 To send the same prompt to several models on web or desktop, **Shift-click** models
 in a new thread's model picker to add or remove them. A regular click returns to a
@@ -96,8 +95,12 @@ after the drop.
 
 New threads appear above the active threads you have arranged. Settling clears a thread's active
 position, so using **Un-settle** returns it to the top. Pinning and snoozing preserve its active
-position until you move it again. Thread activity does not change the order. The settled shelf
+position until you move it again. Working threads move to the top of the active section,
+across every project, and return to their arranged place when they finish. The settled shelf
 continues to use settlement time.
+
+The thread list opens on **All** projects each time you start T3 Code. Choose a project next to
+the search box to show only its threads for the rest of the session.
 
 If dragging is unavailable for one environment, update the T3 Code server running in that
 environment. Pinned and active reordering require server support. Threads from older servers keep
@@ -189,6 +192,30 @@ Use **Settings → Keybindings** to find or customize shortcuts for searching fi
 and copying a thread reference. A copied reference uses the thread's pull request
 link when available, otherwise its thread ID. See [keybindings](./keybindings.md)
 for custom configuration.
+
+## Browse files and commit from the sidebar
+
+On web and desktop, the icon rail on the left of the sidebar switches between
+**Threads**, **Explorer**, **Source Control**, and **Agents**, and opens
+[**API Gateway**](./api-gateway.md). **Pull Requests**, **Usage**, and **Settings** sit at its
+foot, along with the desktop app's update check.
+Explorer and Source Control follow the open thread's worktree, or its project
+folder when it has none. To review another project without leaving the thread, choose it from
+the project menu at the top of Explorer or Source Control; opening one of its files switches to
+that project's most recent thread.
+
+Source Control lists uncommitted files with their line counts; its icon shows how
+many there are, including edits made outside T3 Code. Select a file to see the
+whole file with its changes in the working tree diff, which fills the chat column;
+**All changes** shows every changed file again, and restoring the panel size brings
+the conversation back. Type a message and
+choose **Commit**, or press `Cmd+Enter` on macOS or `Ctrl+Enter` on Windows and
+Linux. Leave the message empty to have T3 Code write one. Every changed file is
+included; to commit only some, choose **Commit** from the menu beside the Git
+button in the thread header.
+
+Agents lists the open thread's subagents and workflow runs, the same as the
+Agents panel beside the chat. Its icon shows how many are still working.
 
 ## Inspect agent work
 

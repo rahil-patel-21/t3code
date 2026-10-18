@@ -47,12 +47,18 @@ const encodeUnknownJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unkno
 const encodeUnknownJsonString = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 const decodeUnknownJsonString = Schema.decodeSync(Schema.fromJsonString(Schema.Unknown));
 
-function claudeLine(id: number, outputTokens: number, model = "claude-fable-5"): string {
+function claudeLine(
+  id: number,
+  outputTokens: number,
+  model = "claude-fable-5",
+  cwd?: string,
+): string {
   return `${JSON.stringify({
     type: "assistant",
     timestamp: "2026-08-01T10:00:00Z",
     requestId: `req_${id}`,
     sessionId: "session-1",
+    ...(cwd === undefined ? {} : { cwd }),
     message: {
       id: `msg_${id}`,
       model,
@@ -219,6 +225,7 @@ function makeFakeCursor() {
             timestampMs,
             model: "claude-fable-5",
             sessionId: "conversation-1",
+            cwd: "",
             totals: {
               uncachedInputTokens: 0,
               cachedInputTokens: 0,
@@ -1141,6 +1148,81 @@ describe("UsageService", () => {
         sources.filter((source) => source.fingerprint.provider === "codex").length,
         1,
       );
+    }).pipe(Effect.scoped),
+  );
+
+  it.live("credits usage to the project each session started in", () =>
+    Effect.gen(function* () {
+      const { settings, home } = yield* setup;
+      const { service, worktreesDir } = yield* Effect.gen(function* () {
+        const config = yield* ServerConfig.ServerConfig;
+        return { service: yield* UsageService.make, worktreesDir: config.worktreesDir };
+      }).pipe(
+        Effect.provide(layerService({ prefix: "usage-service-projects-test", home, settings })),
+      );
+      // Directories only appear inside transcripts; none of them has to exist.
+      const repo = NodePath.join(home, "work", "t3code");
+      const scratch = NodePath.join(NodeOS.homedir(), "t3-usage-test-scratch");
+      const claudeDir = (start: string) =>
+        NodePath.join(home, "claude", "projects", start.replace(/[^a-zA-Z0-9]/g, "-"));
+      yield* Effect.promise(async () => {
+        await NodeFSP.mkdir(claudeDir(repo), { recursive: true });
+        await NodeFSP.writeFile(
+          NodePath.join(claudeDir(repo), "a.jsonl"),
+          claudeLine(1, 5, undefined, NodePath.join(repo, "apps", "web")),
+        );
+        // A subagent transcript that began after its session moved into a subdirectory.
+        await NodeFSP.mkdir(NodePath.join(claudeDir(scratch), "b", "subagents"), {
+          recursive: true,
+        });
+        await NodeFSP.writeFile(
+          NodePath.join(claudeDir(scratch), "b.jsonl"),
+          claudeLine(2, 3, undefined, scratch),
+        );
+        await NodeFSP.writeFile(
+          NodePath.join(claudeDir(scratch), "b", "subagents", "agent-1.jsonl"),
+          claudeLine(3, 4, undefined, NodePath.join(scratch, "nested")),
+        );
+        // A Codex session in a T3 worktree of the project.
+        await NodeFSP.mkdir(NodePath.join(home, "codex", "sessions"), { recursive: true });
+        await NodeFSP.writeFile(
+          NodePath.join(home, "codex", "sessions", "rollout.jsonl"),
+          [
+            {
+              type: "session_meta",
+              payload: {
+                id: "codex-session",
+                cwd: NodePath.join(worktreesDir, "t3code", "feature-x"),
+              },
+            },
+            { type: "turn_context", payload: { model: "gpt-5.6-sol" } },
+            {
+              type: "event_msg",
+              timestamp: "2026-08-01T10:00:00Z",
+              payload: {
+                type: "token_count",
+                info: { last_token_usage: { input_tokens: 10, output_tokens: 11 } },
+              },
+            },
+          ]
+            .map((line) => encodeUnknownJsonString(line))
+            .join("\n") + "\n",
+        );
+      });
+
+      const summary = yield* service.readSummary(WINDOW, [
+        { title: "T3 Code", workspaceRoot: repo },
+      ]);
+
+      const outputByProject: Record<string, number> = {};
+      for (const bucket of summary.buckets) {
+        const project = bucket.project ?? "(none)";
+        outputByProject[project] = (outputByProject[project] ?? 0) + bucket.totals.outputTokens;
+      }
+      assert.deepStrictEqual(outputByProject, {
+        "T3 Code": 5 + 11,
+        [NodePath.join("~", "t3-usage-test-scratch")]: 3 + 4,
+      });
     }).pipe(Effect.scoped),
   );
 

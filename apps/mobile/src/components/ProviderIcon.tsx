@@ -94,6 +94,28 @@ export function ProviderIcon(props: ProviderIconProps) {
     );
   }
 
+  // MiniMax Code has no public raster mark we can ship, so it gets a neutral
+  // double-arch monogram matching the web `MiniMaxCodeIcon`.
+  if (props.provider === "minimaxCode") {
+    const stroke = isDarkMode ? "#F5F5F5" : "#0F0F0F";
+    return (
+      <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+        <Path
+          d="M5 17.75V9.25a3 3 0 0 1 6 0v8.5"
+          stroke={stroke}
+          strokeWidth={2.5}
+          strokeLinecap="round"
+        />
+        <Path
+          d="M13 17.75V9.25a3 3 0 0 1 6 0v8.5"
+          stroke={stroke}
+          strokeWidth={2.5}
+          strokeLinecap="round"
+        />
+      </Svg>
+    );
+  }
+
   const packageIcon = getProviderClient(props.provider)?.icon;
   if (packageIcon) {
     const themeFill = (fill: { readonly light: string; readonly dark: string }) =>

@@ -1,5 +1,6 @@
 import * as Cache from "effect/Cache";
 import * as Clock from "effect/Clock";
+import { APP_BASE_NAME } from "@t3tools/contracts";
 import type {
   RelayClientInstallProgressEvent,
   RelayClientInstallProgressStage,
@@ -516,7 +517,7 @@ export const makeCloudflaredRelayClient = Effect.fn("cloudflared.make")(function
     if (!releaseAsset) {
       return yield* new RelayClientInstallError({
         reason: "unsupported_platform",
-        message: `T3 Code does not provide a managed relay client binary for ${platform}-${arch}.`,
+        message: `${APP_BASE_NAME} does not provide a managed relay client binary for ${platform}-${arch}.`,
       });
     }
 

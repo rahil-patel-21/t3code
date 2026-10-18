@@ -1,3 +1,4 @@
+/** A byte count in the largest unit that keeps it at one or more: `512 B`, `1.50 KB`, `12.3 MB`. */
 export function formatBytes(value: number): string {
   if (value < 1_024) return `${Math.round(value)} B`;
   const units = ["KB", "MB", "GB", "TB"] as const;

@@ -8,6 +8,17 @@ import * as Schema from "effect/Schema";
 
 import { GUARD_LENGTH, type TranscriptParsePosition } from "./usageTranscriptReader.ts";
 
+// v2: Codex fork-copy suppression changed what a file parses to, so v1
+// entries would keep serving double-counted records forever.
+// v3: entries carry the parse position and reducer state so a grown file
+// re-parses only its appended bytes instead of starting over.
+// v4: records carry Claude fast mode, which v3 rows never captured.
+// v5: records carry their working directory for the per-project breakdown, and
+// a Codex record's service tier. v4 rows already stored speed the same way, so
+// v4 entries still load; they carry no directory, so those sessions read as
+// `""`. See `decodeScanCache` for v4 Codex entries.
+// Two builds both shipped this version number with different row layouts; the
+// `cwds` table distinguishes them. See `carriesCwd` in `decodeScanCache`.
 const USAGE_SCAN_CACHE_VERSION = 5 as const;
 const SPEED_COMPATIBLE_SINCE_VERSION = 4;
 
@@ -48,7 +59,14 @@ type SerializedRecord = readonly [
   reasoningTokens: number,
   dedupeKey: string | null,
   reportedCostUsd: number | null,
+  /**
+   * Index into `SPEEDS`. A v4 row stored Claude fast mode in this same slot as
+   * 0 or 1, which reads as `standard` or `fast`.
+   */
   speed: number,
+  /** Index into `cwds`. A v4 row has no directory, so it is absent there. */
+  cwdIndex?: number,
+  /** Optional trailing field keeps older cache rows readable. */
   rateModelIndex?: number | null,
 ];
 
@@ -68,18 +86,29 @@ interface SerializedCache {
   readonly version: number;
   readonly models: readonly string[];
   readonly sessions: readonly string[];
+  readonly cwds: readonly string[];
   readonly files: Readonly<Record<string, SerializedFile>>;
 }
 
+/** Model, session, and directory strings, each stored once and referenced by index. */
 interface InternTables {
   readonly models: string[];
   readonly sessions: string[];
+  readonly cwds: string[];
   readonly modelIndex: Map<string, number>;
   readonly sessionIndex: Map<string, number>;
+  readonly cwdIndex: Map<string, number>;
 }
 
 function makeInternTables(): InternTables {
-  return { models: [], sessions: [], modelIndex: new Map(), sessionIndex: new Map() };
+  return {
+    models: [],
+    sessions: [],
+    cwds: [],
+    modelIndex: new Map(),
+    sessionIndex: new Map(),
+    cwdIndex: new Map(),
+  };
 }
 
 function intern(table: string[], index: Map<string, number>, value: string): number {
@@ -104,6 +133,7 @@ function serializeFile(entry: CachedFile, tables: InternTables): SerializedFile 
     record.dedupeKey,
     record.reportedCostUsd,
     SPEEDS.indexOf(record.speed),
+    intern(tables.cwds, tables.cwdIndex, record.cwd),
     record.rateModel === undefined
       ? null
       : intern(tables.models, tables.modelIndex, record.rateModel),
@@ -121,6 +151,7 @@ function serializeFile(entry: CachedFile, tables: InternTables): SerializedFile 
   };
 }
 
+/** Serialises the cache, interning the repeated model, session, and directory strings. */
 export function encodeScanCache(cache: ScanCache): SerializedCache {
   const tables = makeInternTables();
   const files: Record<string, SerializedFile> = {};
@@ -129,6 +160,7 @@ export function encodeScanCache(cache: ScanCache): SerializedCache {
     version: USAGE_SCAN_CACHE_VERSION,
     models: tables.models,
     sessions: tables.sessions,
+    cwds: tables.cwds,
     files,
   };
 }
@@ -160,6 +192,7 @@ export function makeScanCacheWriter(): (
       version: USAGE_SCAN_CACHE_VERSION,
       models: tables.models,
       sessions: tables.sessions,
+      cwds: tables.cwds,
     });
     return `${head.slice(0, -1)},"files":{${files.join(",")}}}`;
   };
@@ -187,12 +220,24 @@ export function decodeScanCache(
     return cache;
   }
   if (!isRecordArray(root.models) || !isRecordArray(root.sessions)) return cache;
+  // A v4 file predates the directory table, so its rows carry no cwd. Absent is
+  // the empty table; present but not an array of strings is corrupt.
+  if (root.cwds !== undefined && !isRecordArray(root.cwds)) return cache;
   if (typeof root.files !== "object" || root.files === null) return cache;
 
   if (!root.models.every((value) => typeof value === "string")) return cache;
   if (!root.sessions.every((value) => typeof value === "string")) return cache;
+  if (root.cwds?.some((value) => typeof value !== "string")) return cache;
   const models = root.models as readonly string[];
   const sessions = root.sessions as readonly string[];
+  const cwds = (root.cwds ?? []) as readonly string[];
+
+  // Two row layouts are called v5. This branch's rows carry the directory at
+  // slot 11 and the rate model after it; the v5 written before the directory
+  // table carries the rate model at slot 11 and has no `cwds`. The table's
+  // presence tells them apart, so the other build's cache keeps its rate model
+  // instead of reading a directory index as a model index and pricing from it.
+  const carriesCwd = root.cwds !== undefined;
 
   // Any corrupt row disqualifies the whole entry. Keeping the survivors
   // under the original (size, mtime) would read as a valid warm hit and the
@@ -203,6 +248,7 @@ export function decodeScanCache(
   ): UsageRecord[] | null => {
     const records: UsageRecord[] = [];
     for (const row of rows) {
+      // A v4 row stops after the speed index; it has no cwd and no rate model.
       if (!isRecordArray(row) || row.length < 11) return null;
       const [
         timestampMs,
@@ -216,8 +262,11 @@ export function decodeScanCache(
         dedupeKey,
         reportedCostUsd,
         speedIndex,
-        rateModelIndex,
+        tailIndex,
+        trailingRateModelIndex,
       ] = row as SerializedRecord;
+      const cwdIndex = carriesCwd ? tailIndex : undefined;
+      const rateModelIndex = carriesCwd ? trailingRateModelIndex : tailIndex;
       const speed = typeof speedIndex === "number" ? SPEEDS[speedIndex] : undefined;
 
       const model = typeof modelIndex === "number" ? models[modelIndex] : undefined;
@@ -243,6 +292,7 @@ export function decodeScanCache(
         model,
         ...(rateModel === undefined ? {} : { rateModel }),
         sessionId: (typeof sessionIndex === "number" ? sessions[sessionIndex] : undefined) ?? "",
+        cwd: (typeof cwdIndex === "number" ? cwds[cwdIndex] : undefined) ?? "",
         totals: {
           uncachedInputTokens: uncached,
           cachedInputTokens: cached,

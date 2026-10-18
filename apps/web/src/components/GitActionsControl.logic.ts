@@ -261,19 +261,10 @@ export function resolveQuickAction(
     };
   }
 
+  // Uncommitted changes default to a plain commit; push and the change request
+  // stay in the menu.
   if (hasChanges) {
-    if (!gitStatus.hasUpstream && !hasPrimaryRemote) {
-      return { label: "Commit", disabled: false, kind: "run_action", action: "commit" };
-    }
-    if (hasOpenPr || isDefaultRef) {
-      return { label: "Commit & push", disabled: false, kind: "run_action", action: "commit_push" };
-    }
-    return {
-      label: `Commit, push & ${terminology.shortLabel}`,
-      disabled: false,
-      kind: "run_action",
-      action: "commit_push_pr",
-    };
+    return { label: "Commit", disabled: false, kind: "run_action", action: "commit" };
   }
 
   if (!gitStatus.hasUpstream) {

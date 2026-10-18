@@ -2,6 +2,7 @@
 // @effect-diagnostics nodeBuiltinImport:off -- Read the portal file through one bounded file descriptor at the native adapter boundary.
 
 import * as NodeCrypto from "node:crypto";
+import { APP_BASE_NAME } from "@t3tools/contracts";
 import {
   DBusError,
   Message,
@@ -304,7 +305,7 @@ export class LinuxCaptureConnection {
       this.bus.requestName(`${appId}.SnapShot`, NameFlag.DO_NOT_QUEUE),
     );
     if (result !== RequestNameReply.PRIMARY_OWNER) {
-      throw new Error("Another T3 Code instance is capturing a window. Try again.");
+      throw new Error(`Another ${APP_BASE_NAME} instance is capturing a window. Try again.`);
     }
     const withFeedback = this.feedbackAvailable && options !== undefined;
     const reply = await this.call({

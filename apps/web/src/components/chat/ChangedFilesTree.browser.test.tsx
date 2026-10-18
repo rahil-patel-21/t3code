@@ -40,6 +40,12 @@ function buttonWithText(label: string) {
   return button!;
 }
 
+function buttonWithLabel(label: string) {
+  const button = container.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`);
+  expect(button, `button ${label}`).toBeDefined();
+  return button!;
+}
+
 describe("ChangedFilesCard", () => {
   it("summarizes a single file with a singular label", async () => {
     await render(
@@ -57,23 +63,64 @@ describe("ChangedFilesCard", () => {
     expect(text()).not.toContain("1 changed files");
   });
 
+  const foldersAndRoots = [
+    file("apps/web/src/App.tsx", 120, 20),
+    file("apps/web/src/App.test.tsx", 30, 2),
+    file("packages/shared/src/git.ts", 15, 4),
+    file("README.md", 3),
+  ];
+
+  it("opens as just the summary until it is expanded", async () => {
+    await render(
+      <ChangedFilesCard
+        runId={RunId.make("run-1")}
+        files={[file("apps/web/src/App.tsx", 120, 20)]}
+        allDirectoriesExpanded={false}
+        resolvedTheme="light"
+        onToggleAllDirectories={() => {}}
+        onOpenTurnDiff={() => {}}
+      />,
+    );
+
+    expect(text()).toContain("1 changed file");
+    expect(buttonWithLabel("Expand summary")).toBeDefined();
+    expect(text()).not.toContain("apps/web/src");
+    expect(text()).not.toContain("Expand all folders");
+  });
+
+  it("summarizes folders and root files together until the summary expands", async () => {
+    await render(
+      <ChangedFilesCard
+        runId={RunId.make("run-1")}
+        files={foldersAndRoots}
+        allDirectoriesExpanded={false}
+        resolvedTheme="light"
+        onToggleAllDirectories={() => {}}
+        onOpenTurnDiff={() => {}}
+      />,
+    );
+
+    expect(container.querySelector('[data-changed-files-state="tree"]')).not.toBeNull();
+    expect(buttonWithLabel("Expand summary")).toBeDefined();
+    expect(text()).toContain("4 changed files");
+    expect(text()).not.toContain("apps/web/src");
+    expect(text()).not.toContain("README.md");
+  });
+
   it("shows collapsed folders and root files together, and opens a folder on click", async () => {
     const onOpenTurnDiff = vi.fn();
     await render(
       <ChangedFilesCard
         runId={RunId.make("run-1")}
-        files={[
-          file("apps/web/src/App.tsx", 120, 20),
-          file("apps/web/src/App.test.tsx", 30, 2),
-          file("packages/shared/src/git.ts", 15, 4),
-          file("README.md", 3),
-        ]}
+        files={foldersAndRoots}
         allDirectoriesExpanded={false}
         resolvedTheme="light"
         onToggleAllDirectories={() => {}}
         onOpenTurnDiff={onOpenTurnDiff}
       />,
     );
+
+    await act(async () => buttonWithLabel("Expand summary").click());
 
     expect(text()).toContain("apps/web/src");
     expect(text()).toContain("packages/shared/src");

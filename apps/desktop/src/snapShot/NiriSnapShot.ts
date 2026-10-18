@@ -6,6 +6,7 @@ import * as NodeNet from "node:net";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
+import { APP_BASE_NAME } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 
 import type { LinuxWindowSnapshot } from "./LinuxSnapShot.ts";
@@ -173,7 +174,7 @@ async function activateNiriWindow(path: string, title: string, signal: AbortSign
         (window) => window.pid === process.pid && window.title === title,
       );
       if (matches.length > 1)
-        throw new Error("More than one T3 Code window matches the capture destination.");
+        throw new Error(`More than one ${APP_BASE_NAME} window matches the capture destination.`);
       return matches[0];
     });
     connection.send("EventStream");

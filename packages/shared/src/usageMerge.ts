@@ -38,12 +38,24 @@ export interface ModelTotals {
   readonly tokenShare: number;
 }
 
+export interface ProjectTotals {
+  /** Project title or start directory; `null` when the transcripts did not record one. */
+  readonly project: string | null;
+  readonly costUsd: number;
+  readonly totalTokens: number;
+  readonly records: number;
+  readonly unpricedRecords: number;
+  readonly costShare: number;
+}
+
 /**
- * A model whose every record lacked rates has an unknown cost, not a zero one.
- * Clients must not present its `costUsd` as a real dollar figure.
+ * A model or project whose every record lacked rates has an unknown cost, not
+ * a zero one. Clients must not present its `costUsd` as a real dollar figure.
  */
-export function isModelCostUnknown(model: ModelTotals): boolean {
-  return model.records > 0 && model.unpricedRecords >= model.records;
+export function isModelCostUnknown(
+  totals: Pick<ModelTotals, "records" | "unpricedRecords">,
+): boolean {
+  return totals.records > 0 && totals.unpricedRecords >= totals.records;
 }
 
 export interface DailyTotals {
@@ -101,6 +113,7 @@ export interface MergedUsage {
   readonly sessions: number;
   readonly providers: readonly ProviderTotals[];
   readonly models: readonly ModelTotals[];
+  readonly projects: readonly ProjectTotals[];
   readonly daily: readonly DailyTotals[];
   readonly hourly: readonly HourlyTotals[];
   readonly costQuality: CostQuality;
@@ -290,6 +303,7 @@ const EMPTY_MERGED: MergedUsage = {
   sessions: 0,
   providers: [],
   models: [],
+  projects: [],
   daily: [],
   hourly: [],
   costQuality: {
@@ -366,6 +380,11 @@ export function mergeUsage(
       unpricedRecords: number;
       unpricedTokens: number;
     }
+  >();
+  // Keyed by project label; "" collects buckets that carry none.
+  const projectAccumulator = new Map<
+    string,
+    { costUsd: number; totalTokens: number; records: number; unpricedRecords: number }
   >();
   const dailyAccumulator = new Map<
     string,
@@ -475,6 +494,19 @@ export function mergeUsage(
       }
       modelAccumulator.set(modelKey, model);
 
+      const projectKey = bucket.project ?? "";
+      const project = projectAccumulator.get(projectKey) ?? {
+        costUsd: 0,
+        totalTokens: 0,
+        records: 0,
+        unpricedRecords: 0,
+      };
+      project.costUsd += bucket.costUsd;
+      project.totalTokens += tokens;
+      project.records += bucket.records;
+      project.unpricedRecords += bucket.unpricedRecords;
+      projectAccumulator.set(projectKey, project);
+
       const day = dailyAccumulator.get(bucket.day) ?? {
         costUsd: 0,
         totalTokens: 0,
@@ -539,6 +571,14 @@ export function mergeUsage(
     }))
     .sort((a, b) => b.costUsd - a.costUsd || b.totalTokens - a.totalTokens);
 
+  const projects: ProjectTotals[] = [...projectAccumulator.entries()]
+    .map(([project, totals]) => ({
+      project: project === "" ? null : project,
+      ...totals,
+      costShare: costUsd === 0 ? 0 : totals.costUsd / costUsd,
+    }))
+    .sort((a, b) => b.costUsd - a.costUsd || b.totalTokens - a.totalTokens);
+
   const daily: DailyTotals[] = [...dailyAccumulator.entries()]
     .map(([day, totals]) => ({
       day,
@@ -564,6 +604,7 @@ export function mergeUsage(
     sessions,
     providers,
     models,
+    projects,
     daily,
     hourly,
     costQuality: {

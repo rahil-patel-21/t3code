@@ -1,4 +1,5 @@
 export * from "./baseSchemas.ts";
+export * from "./branding.ts";
 export * from "./assistantCitations.ts";
 export * from "./composerContext.ts";
 export * from "./composerContextClipboard.ts";
@@ -58,9 +59,9 @@ export * from "./preview.ts";
 export * from "./previewAutomation.ts";
 export * from "./resourceTelemetry.ts";
 export * from "./usage.ts";
+export * from "./apiGateway.ts";
 export * from "./scheduledTask.ts";
 export * from "./worktreeMcp.ts";
-export * from "./resourceTelemetry.ts";
 export * from "./rpc.ts";
 export * from "./worktreeSetup.ts";
 export * from "./secretRequest.ts";

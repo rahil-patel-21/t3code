@@ -41,8 +41,7 @@ export function isInsideCollapsedComposerControls(target: EventTarget | null): b
 export function isInsideRestingComposerControlScope(target: EventTarget | null): boolean {
   return (
     target instanceof Element &&
-    (target.closest('[data-chat-composer-resting-controls="true"]') !== null ||
-      target.closest('[data-chat-composer-resting-images="true"]') !== null ||
+    (target.closest('[data-chat-composer-resting-images="true"]') !== null ||
       target.closest("[data-composer-context-control]") !== null ||
       isInsideComposerFloatingLayer(target))
   );

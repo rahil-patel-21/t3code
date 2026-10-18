@@ -505,7 +505,6 @@ export function useComposerCommandMenu({
           })
         : [];
       return [
-        ...threadItems,
         ...pathSearch.entries.map((entry) => {
           const parts = entry.path.split("/");
           return {
@@ -517,6 +516,7 @@ export function useComposerCommandMenu({
             description: parts.length > 1 ? parts.slice(0, -1).join("/") : "",
           };
         }),
+        ...threadItems,
       ];
     }
 

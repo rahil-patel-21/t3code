@@ -24,6 +24,8 @@ export const CodexScanState = Schema.Struct({
   model: Schema.mutableKey(Schema.String),
   speed: Schema.mutableKey(Schema.Literals(["standard", "fast", "ultrafast"])),
   sessionId: Schema.mutableKey(Schema.String),
+  /** The session's working directory, from its own `session_meta`. */
+  cwd: Schema.mutableKey(Schema.String),
   lastUsageSignature: Schema.mutableKey(Schema.NullOr(Schema.String)),
   sawSessionMeta: Schema.mutableKey(Schema.Boolean),
   suppressingForkCopies: Schema.mutableKey(Schema.Boolean),
@@ -36,6 +38,7 @@ export function initialCodexScanState(): CodexScanState {
     model: "",
     speed: "standard",
     sessionId: "",
+    cwd: "",
     lastUsageSignature: null,
     sawSessionMeta: false,
     suppressingForkCopies: false,
@@ -93,6 +96,7 @@ function parseCodexRecord(parsed: unknown, state: CodexScanState): UsageRecord |
     state.sawSessionMeta = true;
     const id = payloadRecord["id"] ?? payloadRecord["session_id"];
     if (typeof id === "string") state.sessionId = id;
+    if (typeof payloadRecord["cwd"] === "string") state.cwd = payloadRecord["cwd"];
     const metaTimestampMs = parseTimestampMs(record["timestamp"]);
     if (metaTimestampMs !== null && isForkedSessionMeta(payloadRecord)) {
       state.suppressingForkCopies = true;
@@ -166,6 +170,7 @@ function parseCodexRecord(parsed: unknown, state: CodexScanState): UsageRecord |
     timestampMs,
     model: state.model,
     sessionId: state.sessionId,
+    cwd: state.cwd,
     totals,
     reportedCostUsd: null,
     speed: state.speed,

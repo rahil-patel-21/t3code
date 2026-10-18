@@ -51,6 +51,12 @@
       ]
     },
     {
+      "driver": "minimaxCode",
+      "t3CodeRange": ">=0.0.44",
+      "recommendedRange": ">=0.5.5",
+      "ranges": [{ "range": ">=0.5.5", "status": "supported" }]
+    },
+    {
       "driver": "opencode",
       "t3CodeRange": ">=0.0.42 <0.0.46",
       "recommendedRange": ">=1.14.19 <2.0.0",

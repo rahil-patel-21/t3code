@@ -33,8 +33,6 @@ import { CSS } from "@dnd-kit/utilities";
 import {
   canSnooze,
   effectiveSnoozed,
-  hasQueuedTurnStart,
-  QUEUED_TURN_START_GRACE_MS,
   threadWokeAt,
 } from "@t3tools/client-runtime/state/thread-settled";
 import { createInboxReturnTracker } from "@t3tools/client-runtime/state/thread-inbox";
@@ -75,7 +73,6 @@ import {
   CircleCheckIcon,
   CircleDashedIcon,
   CircleDotDashedIcon,
-  ClockIcon,
   FolderIcon,
   GitBranchIcon,
   ListFilterIcon,
@@ -92,8 +89,10 @@ import {
 } from "lucide-react";
 import {
   memo,
+  useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useReducer,
   useRef,
   useState,
@@ -111,7 +110,6 @@ import {
   squashAtomCommandFailure,
   type AtomCommandResult,
 } from "@t3tools/client-runtime/state/runtime";
-import { isElectron } from "../env";
 import {
   resolveShortcutCommand,
   shortcutLabelForCommand,
@@ -149,6 +147,8 @@ import { registerSettleAndAdvance } from "../settleAndAdvance";
 import { startNewThreadFromContext } from "../lib/chatThreadActions";
 import { useClientSettings } from "../hooks/useSettings";
 import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
+import { useImportTerminalSessions } from "../hooks/useImportTerminalSessions";
+import { CliSessionsSection } from "./sidebar/CliSessionsSection";
 import { useLocalStorage } from "../hooks/useLocalStorage";
 import { useNowMinute } from "../hooks/useNowMinute";
 import {
@@ -166,6 +166,7 @@ import {
 } from "../state/entities";
 import { environmentPresentations } from "../state/presentation";
 import { primaryServerKeybindingsAtom } from "../state/server";
+import { shellEnvironment } from "../state/shell";
 import { environmentProjects } from "../state/projects";
 import { vcsEnvironment } from "../state/vcs";
 import { threadEnvironment } from "../state/threads";
@@ -175,12 +176,13 @@ import { useOrchestrationCommand } from "../state/use-orchestration-command";
 import { readEnvironmentScope, useEnvironmentScope } from "../state/session";
 import { buildThreadRouteParams, resolveActiveThreadRouteRef } from "../threadRoutes";
 import { formatRelativeTimeLabel, parseTimestampDate } from "../timestampFormat";
-import type { SidebarThreadSummary } from "../types";
+import type { Project, SidebarThreadSummary } from "../types";
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import { cn } from "~/lib/utils";
 import { EnvironmentMachineIcon } from "./EnvironmentMachineIcon";
 import { ProjectEnvironmentBadge } from "./ProjectEnvironmentBadge";
+import { revealInFileExplorerLabelForConfig } from "./preview/fileExplorerLabel";
 import {
   buildDraftActionMenuItems,
   buildThreadActionMenuItems,
@@ -246,6 +248,7 @@ import {
   prStatusIndicator,
   resolveThreadPullRequestBadge,
   terminalStatusFromRunningIds,
+  threadChangeRequestSnapshotsAtom,
   type TerminalStatusIndicator,
   useLinkedThreadPullRequest,
   ThreadSearchPullRequestNumber,
@@ -276,9 +279,9 @@ import {
   useComboboxFilter,
 } from "./ui/combobox";
 import { SidebarContent, SidebarGroup, useSidebar } from "./ui/sidebar";
-import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrome";
+import { SidebarChromeFooter } from "./sidebar/SidebarChrome";
 import { SidebarHeaderIconButton, SidebarThreadHeader } from "./sidebar/SidebarThreadHeader";
-import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuShortcut, MenuTrigger } from "./ui/menu";
+import { isElectron } from "../env";
 import { Tooltip, TooltipPopup, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
 import { MiddleTruncate } from "./ui/middle-truncate";
 import {
@@ -1053,64 +1056,6 @@ function SidebarThreadTooltip({
   );
 }
 
-function SnoozeMenuButton(props: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  onSnooze: (preset: Pick<SnoozePreset, "snoozedUntil">) => void;
-  timestampFormat: TimestampFormat;
-}) {
-  const { open, onOpenChange, onSnooze, timestampFormat } = props;
-  const presets = open ? resolveSnoozePresets(new Date(), timestampFormat) : [];
-  return (
-    <Menu open={open} onOpenChange={onOpenChange}>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <MenuTrigger
-              render={
-                <button
-                  type="button"
-                  aria-label="Snooze thread"
-                  onClick={(event) => event.stopPropagation()}
-                  onDoubleClick={(event) => event.stopPropagation()}
-                  className="inline-flex h-full cursor-pointer items-center gap-0.5 rounded-md bg-transparent px-1.5 text-xs text-muted-foreground hover:text-foreground"
-                />
-              }
-            />
-          }
-        >
-          <ClockIcon className="size-3" />
-        </TooltipTrigger>
-        <TooltipPopup>Snooze thread</TooltipPopup>
-      </Tooltip>
-      <MenuPopup side="bottom" align="end">
-        {presets.map((preset) => (
-          <MenuItem
-            key={preset.id}
-            onClick={(event) => {
-              event.stopPropagation();
-              onSnooze(preset);
-            }}
-          >
-            {preset.label}
-            <MenuShortcut>{preset.whenLabel}</MenuShortcut>
-          </MenuItem>
-        ))}
-        <MenuSeparator />
-        <MenuItem
-          onClick={async (event) => {
-            event.stopPropagation();
-            const choice = await requestCustomSnooze();
-            if (choice) onSnooze(choice);
-          }}
-        >
-          Custom…
-        </MenuItem>
-      </MenuPopup>
-    </Menu>
-  );
-}
-
 type SortableThreadRowBag = Pick<
   ReturnType<typeof useSortable>,
   "listeners" | "setNodeRef" | "transform" | "transition" | "isDragging"
@@ -1564,7 +1509,6 @@ type SidebarThreadRowProps = {
     event: PointerEvent,
   ) => void;
   onUnsettle: (threadRef: ScopedThreadRef) => void;
-  onSnooze: (threadRef: ScopedThreadRef, preset: Pick<SnoozePreset, "snoozedUntil">) => void;
   onUnsnooze: (threadRef: ScopedThreadRef) => void;
   onUnpin: (threadRef: ScopedThreadRef) => void;
   onAcknowledgeWoke: (threadRef: ScopedThreadRef, visitedAt: string) => void;
@@ -1582,7 +1526,6 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     onRenameTitleChange,
     onSettle,
     onActionSweepStart,
-    onSnooze,
     onStartRename,
     onThreadActivate,
     onThreadClick,
@@ -1826,75 +1769,66 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
       onCommitRename(threadRef, renamingTitle, thread.title);
     }
   };
-  const handleSettleClick = (event: ReactMouseEvent) => {
-    event.preventDefault();
-    event.stopPropagation();
-    onSettle(threadRef);
-  };
-  const handleActionPointerDown = (event: ReactPointerEvent) => {
-    if (!event.isPrimary || event.button !== 0) return;
-    event.stopPropagation();
-    onActionSweepStart(threadRef, variantAction, event.nativeEvent);
-  };
-  const handleUnsettleClick = (event: ReactMouseEvent) => {
-    event.preventDefault();
-    event.stopPropagation();
-    onUnsettle(threadRef);
-  };
-  const handleUnsnoozeClick = (event: ReactMouseEvent) => {
-    event.preventDefault();
-    event.stopPropagation();
-    onUnsnooze(threadRef);
-  };
-  const handleUnpinClick = (event: ReactMouseEvent) => {
-    event.preventDefault();
-    event.stopPropagation();
-    onUnpin(threadRef);
-  };
-  const handleSnoozePreset = (preset: Pick<SnoozePreset, "snoozedUntil">) => {
-    onSnooze(threadRef, preset);
-  };
-  const [snoozeMenuOpenRaw, setSnoozeMenuOpen] = useState(false);
-  // The React Compiler caches render results on their inputs, so a clock read
-  // here would stay frozen until `thread` changes and a queued-turn gate would
-  // never reopen. The gate's clock is state, reset with the thread.
-  const [snoozeGateClock, setSnoozeGateClock] = useState(() => ({
-    thread,
-    now: new Date().toISOString(),
-  }));
-  if (snoozeGateClock.thread !== thread) {
-    setSnoozeGateClock({ thread, now: new Date().toISOString() });
-  }
-  const snoozeGateNow = snoozeGateClock.now;
-  const snoozeGateExpiryMs = hasQueuedTurnStart(thread, { now: snoozeGateNow })
-    ? Date.parse(thread.latestUserMessageAt ?? "") + QUEUED_TURN_START_GRACE_MS
-    : Number.NaN;
-  useEffect(() => {
-    // A gate still closed past its expiry is held by runtime status, not time,
-    // so no clock tick can open it.
-    if (!Number.isFinite(snoozeGateExpiryMs) || snoozeGateExpiryMs <= Date.parse(snoozeGateNow)) {
-      return;
-    }
-    const id = window.setTimeout(
-      () => setSnoozeGateClock({ thread, now: new Date().toISOString() }),
-      Math.min(Math.max(0, snoozeGateExpiryMs - Date.now()) + 50, 2_147_483_647),
-    );
-    return () => window.clearTimeout(id);
-  }, [snoozeGateExpiryMs, snoozeGateNow, thread]);
-  const showSnoozeButton =
-    canOperateThread && props.snoozeSupported && canSnooze(thread, { now: snoozeGateNow });
-  // Closing here, not just masking, keeps the menu from reopening when the button returns.
-  if (snoozeMenuOpenRaw && !showSnoozeButton) setSnoozeMenuOpen(false);
-  const snoozeMenuOpen = snoozeMenuOpenRaw && showSnoozeButton;
-  const handlePrClick = (event: ReactMouseEvent<HTMLElement>, targetUrl?: string) => {
-    const url = targetUrl ?? pr?.url ?? currentLinkedPr?.url;
-    if (!url) return;
-    const showInRightPanel = targetUrl !== undefined || openPullRequestsInRightPanel;
-    const openedInRightPanel = openPrLink(event, url, showInRightPanel ? threadRef : undefined);
-    if (openedInRightPanel && showInRightPanel && !props.isActive) {
-      onThreadActivate(threadRef);
-    }
-  };
+  const handleSettleClick = useCallback(
+    (event: ReactMouseEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      onSettle(threadRef);
+    },
+    [onSettle, threadRef],
+  );
+  const handleActionPointerDown = useCallback(
+    (event: ReactPointerEvent) => {
+      if (!event.isPrimary || event.button !== 0) return;
+      event.stopPropagation();
+      onActionSweepStart(threadRef, variantAction, event.nativeEvent);
+    },
+    [onActionSweepStart, threadRef, variantAction],
+  );
+  const handleUnsettleClick = useCallback(
+    (event: ReactMouseEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      onUnsettle(threadRef);
+    },
+    [onUnsettle, threadRef],
+  );
+  const handleUnsnoozeClick = useCallback(
+    (event: ReactMouseEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      onUnsnooze(threadRef);
+    },
+    [onUnsnooze, threadRef],
+  );
+  const handleUnpinClick = useCallback(
+    (event: ReactMouseEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      onUnpin(threadRef);
+    },
+    [onUnpin, threadRef],
+  );
+  const handlePrClick = useCallback(
+    (event: ReactMouseEvent<HTMLElement>, targetUrl?: string) => {
+      const url = targetUrl ?? pr?.url ?? currentLinkedPr?.url;
+      if (!url) return;
+      const showInRightPanel = targetUrl !== undefined || openPullRequestsInRightPanel;
+      const openedInRightPanel = openPrLink(event, url, showInRightPanel ? threadRef : undefined);
+      if (openedInRightPanel && showInRightPanel && !props.isActive) {
+        onThreadActivate(threadRef);
+      }
+    },
+    [
+      onThreadActivate,
+      openPrLink,
+      openPullRequestsInRightPanel,
+      pr,
+      currentLinkedPr,
+      props.isActive,
+      threadRef,
+    ],
+  );
 
   const rowSurfaceClassName = cn(
     "group/sidebar-row relative w-full cursor-pointer overflow-hidden rounded-md text-left outline-none select-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
@@ -2253,7 +2187,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
         sortable?.isDragging && "relative z-20",
       )}
     >
-      <Tooltip disabled={snoozeMenuOpen || sortable?.isDragging}>
+      <Tooltip disabled={sortable?.isDragging}>
         <TooltipTrigger
           render={
             <div
@@ -2307,7 +2241,6 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                         ? "pointer-events-auto"
                         : "pointer-events-none group-has-[:focus-visible]/sidebar-status-slot:absolute group-has-[:focus-visible]/sidebar-status-slot:right-0 group-has-[:focus-visible]/sidebar-status-slot:opacity-0 group-any-hover/sidebar-row:absolute group-any-hover/sidebar-row:right-0 group-any-hover/sidebar-row:opacity-0",
                       "flex items-center self-center justify-self-end tabular-nums text-secondary-label transition-opacity",
-                      snoozeMenuOpen && "pointer-events-none absolute right-0 opacity-0",
                     )}
                   >
                     {topStatus ? (
@@ -2370,7 +2303,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                       <RelativeTimeLabel timestamp={threadTimeTimestamp(thread)} />
                     )}
                   </span>
-                  {props.settlementSupported || showSnoozeButton || hasUnsentDraft ? (
+                  {props.settlementSupported || hasUnsentDraft ? (
                     <span
                       className={cn(
                         // focus-visible, not focus-within: a mouse click leaves
@@ -2379,7 +2312,6 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                         // once the pointer moves away (e.g. after a failed
                         // settle) instead of cross-fading back.
                         "pointer-events-none absolute inset-y-0 right-0 flex items-stretch opacity-0 transition-opacity has-[:focus-visible]:pointer-events-auto has-[:focus-visible]:static has-[:focus-visible]:opacity-100 group-any-hover/sidebar-row:pointer-events-auto group-any-hover/sidebar-row:static group-any-hover/sidebar-row:opacity-100",
-                        snoozeMenuOpen && "pointer-events-auto static opacity-100",
                       )}
                     >
                       {hasUnsentDraft ? (
@@ -2398,14 +2330,6 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                           </TooltipTrigger>
                           <TooltipPopup side="top">Discard draft</TooltipPopup>
                         </Tooltip>
-                      ) : null}
-                      {showSnoozeButton ? (
-                        <SnoozeMenuButton
-                          open={snoozeMenuOpen}
-                          onOpenChange={setSnoozeMenuOpen}
-                          onSnooze={handleSnoozePreset}
-                          timestampFormat={props.timestampFormat}
-                        />
                       ) : null}
                       {props.settlementSupported ? (
                         <Tooltip>
@@ -2685,6 +2609,22 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
   );
 });
 
+/** Empty-state offer to pull in Claude Code and Codex sessions run in a terminal. */
+function ImportTerminalSessionsButton({ projects }: { projects: ReadonlyArray<Project> }) {
+  const { importSessions, isImporting } = useImportTerminalSessions();
+  return (
+    <button
+      type="button"
+      disabled={isImporting}
+      onClick={() => void importSessions(projects)}
+      className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-sidebar-border px-2.5 py-1 text-2xs font-medium text-sidebar-muted-foreground transition-colors hover:bg-sidebar-row-hover hover:text-sidebar-foreground disabled:pointer-events-none disabled:opacity-60"
+    >
+      <TerminalIcon className="-mx-0.5 size-3" />
+      {isImporting ? "Importing…" : "Import terminal sessions"}
+    </button>
+  );
+}
+
 export default function Sidebar() {
   const {
     projects,
@@ -2720,6 +2660,9 @@ export default function Sidebar() {
     deleteThread,
   } = useThreadActions();
   const updateThreadMetadata = useOrchestrationCommand(threadEnvironment.updateMetadata, {
+    reportFailure: false,
+  });
+  const openInEditor = useOrchestrationCommand(shellEnvironment.openInEditor, {
     reportFailure: false,
   });
   const { copyToClipboard: copyPathToClipboard } = useCopyToClipboard<{ path: string }>({
@@ -2790,6 +2733,7 @@ export default function Sidebar() {
   );
   const environmentMachineById = useEnvironmentMachines();
   const projectGroupsRef = useRef(projectGroups);
+  const changeRequestSnapshotByKey = useAtomValue(threadChangeRequestSnapshotsAtom);
   const persistedProjectScopeKey = useUiStateStore((store) => store.sidebarProjectScopeKey);
   const setPersistedProjectScopeKey = useUiStateStore((store) => store.setSidebarProjectScopeKey);
   const [projectScopeMenuState, dispatchProjectScopeMenu] = useReducer(
@@ -3002,6 +2946,20 @@ export default function Sidebar() {
     optimisticDrop,
     routeThreadKey,
   });
+  // Terminal (CLI) sessions are offered for the project the open thread belongs to.
+  const routeProject = useMemo(() => {
+    if (!routeThreadRef) return null;
+    const projectId =
+      routeDraftThread?.projectId ??
+      threads.find(
+        (thread) =>
+          thread.environmentId === routeThreadRef.environmentId &&
+          thread.id === routeThreadRef.threadId,
+      )?.projectId;
+    return projectId === undefined
+      ? null
+      : (projectByKey.get(`${routeThreadRef.environmentId}:${projectId}`) ?? null);
+  }, [projectByKey, routeDraftThread, routeThreadRef, threads]);
 
   const isSearchingThreads = threadSearchQuery.trim().length > 0;
   const threadSearchMatchByKey = new Map(
@@ -4234,6 +4192,10 @@ export default function Sidebar() {
               canSnoozeNow: canSnooze(thread, { now: new Date().toISOString() }),
               isRegeneratingTitle,
               isRunning: !threadRuntimeCanArchive(thread.runtime),
+              revealLabel: threadWorkspacePath
+                ? (revealInFileExplorerLabelForConfig(serverConfigs.get(thread.environmentId)) ??
+                  null)
+                : null,
               supports: {
                 settlement: supportsSettlement,
                 autoSettleOptOut: supportsAutoSettleOptOut,
@@ -4372,6 +4334,23 @@ export default function Sidebar() {
           case "copy-thread-id":
             copyThreadIdToClipboard(thread.id, { threadId: thread.id });
             return;
+          case "reveal-in-folder": {
+            if (!threadWorkspacePath) return;
+            const result = await openInEditor({
+              environmentId: thread.environmentId,
+              input: { cwd: threadWorkspacePath, editor: "file-manager", reveal: true },
+            });
+            if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+              toastManager.add(
+                stackedThreadToast({
+                  type: "error",
+                  title: "Unable to reveal folder",
+                  description: threadWorkspacePath,
+                }),
+              );
+            }
+            return;
+          }
           case "archive": {
             if (confirmThreadArchive) {
               const confirmed = await settlePromise(() =>
@@ -4529,7 +4508,8 @@ export default function Sidebar() {
   return (
     <>
       <ThreadContextDragGhost />
-      <SidebarChromeHeader isElectron={isElectron} />
+      {/* AppSidebarLayout owns the chrome header above the activity bar; rendering
+          one here too stacked a second "T3 Code" banner under it. */}
       <SidebarContent
         className="min-h-full"
         fixedHeader={
@@ -4683,6 +4663,14 @@ export default function Sidebar() {
         }
       >
         <SidebarGroup className="flex-1" role="presentation">
+          {!isSearchingThreads && routeProject ? (
+            <CliSessionsSection
+              key={`${routeProject.environmentId}:${routeProject.id}`}
+              environmentId={routeProject.environmentId}
+              projectId={routeProject.id}
+              workspaceRoot={routeProject.workspaceRoot}
+            />
+          ) : null}
           {isSearchingThreads ? (
             threadSearchResults.length > 0 ? (
               <TooltipProvider
@@ -4883,7 +4871,6 @@ export default function Sidebar() {
                             onSettle={attemptSettle}
                             onActionSweepStart={startActionSweep}
                             onUnsettle={attemptUnsettle}
-                            onSnooze={attemptSnooze}
                             onUnsnooze={attemptUnsnooze}
                             onUnpin={attemptUnpin}
                             onAcknowledgeWoke={acknowledgeWoke}
@@ -5067,16 +5054,23 @@ export default function Sidebar() {
                     Add project
                   </button>
                 </>
-              ) : scopedProjectGroup ? (
-                `No threads in ${scopedProjectGroup.displayName} yet`
               ) : (
-                "No threads yet"
+                <>
+                  <span>
+                    {scopedProjectGroup
+                      ? `No threads in ${scopedProjectGroup.displayName} yet`
+                      : "No threads yet"}
+                  </span>
+                  <ImportTerminalSessionsButton
+                    projects={scopedProjectGroup?.memberProjects ?? projects}
+                  />
+                </>
               )}
             </div>
           ) : null}
         </SidebarGroup>
       </SidebarContent>
-      <SidebarChromeFooter />
+      <SidebarChromeFooter activityRail />
     </>
   );
 }

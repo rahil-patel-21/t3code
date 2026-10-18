@@ -1,6 +1,8 @@
-import type { ServerProviderUsageWindow } from "@t3tools/contracts";
-import type { CursorSettings } from "../settings.ts";
+import * as NodeOS from "node:os";
+import { APP_BASE_NAME, type ServerProviderUsageWindow } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
+
+import type { CursorSettings } from "../settings.ts";
 import { CURSOR_USAGE_WINDOWS } from "@t3tools/shared/usageLimits";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -94,7 +96,7 @@ export const readCursorUsageLimits = Effect.fn("readCursorUsageLimits")(function
         return makeUnavailableUsageLimits({
           checkedAt,
           reason: "unsupported",
-          message: "Enable Cursor account usage in T3 Code to read its Keychain login.",
+          message: `Enable Cursor account usage in ${APP_BASE_NAME} to read its Keychain login.`,
         });
       }
       if (endpoint !== DEFAULT_CURSOR_API_ENDPOINT) {

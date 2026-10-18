@@ -47,6 +47,7 @@ const baseProps = {
   editingRunId: null,
   onEditQueuedRun: () => undefined,
   onCancelEdit: () => undefined,
+  onExpandImage: () => undefined,
 } satisfies ComponentProps<typeof QueuedRunsControl>;
 
 async function render(props: Partial<ComponentProps<typeof QueuedRunsControl>> = {}) {
@@ -126,6 +127,11 @@ describe("QueuedRunsControl attachments and edit mode", () => {
     expect(labels(view)).toContain("Edit queued message");
     expect(labels(view)).toContain("Reorder queued message (drag, or press the arrow keys)");
     expect(labels(view)).not.toContain("Move queued message up");
+    // The thumbnail must be a real control, not a decorative span: clicking a
+    // queued image is how a user inspects it before the run starts.
+    const thumbnail = view.querySelector('img[alt="screenshot.png"]')?.closest("button");
+    expect(thumbnail?.getAttribute("aria-label")).toBe("Preview screenshot.png");
+    expect(thumbnail?.getAttribute("type")).toBe("button");
   });
 
   it("drops the optimistic pending row once the projection holds its message", async () => {

@@ -5,7 +5,7 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { AuthStandardClientScopes } from "@t3tools/contracts";
+import { APP_BASE_NAME, AuthStandardClientScopes } from "@t3tools/contracts";
 import * as NetService from "@t3tools/shared/Net";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { assert, describe, expect, it } from "@effect/vitest";
@@ -264,7 +264,7 @@ describe("t3 pair", () => {
       const rendered = String(
         typeof error === "object" && error !== null && "cause" in error ? error.cause : error,
       );
-      assert.include(rendered, "No running T3 Code server found.");
+      assert.include(rendered, `No running ${APP_BASE_NAME} server found.`);
       assert.include(rendered, "npx t3 serve");
       assert.include(rendered, "npx t3 connect");
     }).pipe(Effect.provide(NodeServices.layer)),
@@ -291,7 +291,7 @@ describe("t3 pair", () => {
         const rendered = String(
           typeof error === "object" && error !== null && "cause" in error ? error.cause : error,
         );
-        assert.include(rendered, "No running T3 Code server found.");
+        assert.include(rendered, `No running ${APP_BASE_NAME} server found.`);
       }),
     ).pipe(Effect.provide(NodeServices.layer)),
   );
@@ -315,7 +315,7 @@ describe("t3 pair", () => {
       const rendered = String(
         typeof error === "object" && error !== null && "cause" in error ? error.cause : error,
       );
-      assert.include(rendered, "No running T3 Code server found.");
+      assert.include(rendered, `No running ${APP_BASE_NAME} server found.`);
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 });

@@ -4,6 +4,7 @@
 // cannot express: it kills the child when the scope closes.
 import * as NodeChildProcess from "node:child_process";
 
+import { APP_BASE_NAME } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Console from "effect/Console";
 import * as Effect from "effect/Effect";
@@ -205,5 +206,5 @@ const runUninstall = Effect.fn("cli.uninstall.run")(function* (input: {
     }
   }
   yield* Console.log("");
-  yield* Console.log("t3 is uninstalled. Thanks for trying T3 Code.");
+  yield* Console.log(`t3 is uninstalled. Thanks for trying ${APP_BASE_NAME}.`);
 });

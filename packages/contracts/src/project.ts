@@ -40,6 +40,13 @@ export const ProjectScript = Schema.Struct({
   async: Schema.optional(Schema.Boolean),
   previewUrl: Schema.optional(TrimmedNonEmptyString),
   autoOpenPreview: Schema.optional(Schema.Boolean),
+  /**
+   * Where `previewUrl` opens: `"app"` for the in-app preview (the default) or
+   * `"browser"` for the default web browser. Mirrors `T3ProjectFileScript`.
+   */
+  previewTarget: Schema.optional(Schema.Literals(["app", "browser"])),
+  /** When true the script runs in a hidden terminal instead of opening the drawer. */
+  runInBackground: Schema.optional(Schema.Boolean),
 });
 export type ProjectScript = typeof ProjectScript.Type;
 
@@ -447,6 +454,8 @@ export const ProjectFileOperation = Schema.Literals([
   "close",
   "make-directory",
   "write-file",
+  "rename",
+  "trash",
 ]);
 export type ProjectFileOperation = typeof ProjectFileOperation.Type;
 
@@ -492,6 +501,23 @@ export const ProjectWriteFileInput = Schema.Struct({
   contents: Schema.String,
 });
 export type ProjectWriteFileInput = typeof ProjectWriteFileInput.Type;
+
+/** Renames or moves a file or directory within the workspace. Never overwrites. */
+export const ProjectRenameEntryInput = Schema.Struct({
+  cwd: TrimmedNonEmptyString,
+  relativePath: TrimmedNonEmptyString.check(Schema.isMaxLength(PROJECT_WRITE_FILE_PATH_MAX_LENGTH)),
+  nextRelativePath: TrimmedNonEmptyString.check(
+    Schema.isMaxLength(PROJECT_WRITE_FILE_PATH_MAX_LENGTH),
+  ),
+});
+export type ProjectRenameEntryInput = typeof ProjectRenameEntryInput.Type;
+
+/** Moves a file or directory within the workspace to the host's Trash. */
+export const ProjectDeleteEntryInput = Schema.Struct({
+  cwd: TrimmedNonEmptyString,
+  relativePath: TrimmedNonEmptyString.check(Schema.isMaxLength(PROJECT_WRITE_FILE_PATH_MAX_LENGTH)),
+});
+export type ProjectDeleteEntryInput = typeof ProjectDeleteEntryInput.Type;
 
 export const ProjectWriteFileResult = Schema.Struct({
   relativePath: TrimmedNonEmptyString,

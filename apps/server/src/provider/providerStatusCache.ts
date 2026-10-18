@@ -34,6 +34,7 @@ const BUILT_IN_DRIVER_ORDER: ReadonlyArray<string> = [
   "claudeAgent",
   "cursor",
   "grok",
+  "minimaxCode",
   "opencode",
   "antigravity",
 ];
