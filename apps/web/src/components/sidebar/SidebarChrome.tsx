@@ -29,23 +29,38 @@ import { SidebarUpdateArchitectureWarning, SidebarUpdatePill } from "./SidebarUp
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
 import { observeResize } from "~/lib/observeResize";
 
-export const SidebarChromeHeader = memo(function SidebarChromeHeader({
-  isElectron,
-}: {
-  isElectron: boolean;
-}) {
+function useSidebarPillLabel() {
   const stageLabel = useEnvironmentStageLabel();
   const environmentIdentificationMode = useEnvironmentIdentificationMode();
-  const pillLabel =
-    environmentIdentificationMode === "pill"
-      ? resolveEnvironmentIdentificationPillLabel(stageLabel)
-      : null;
+  return environmentIdentificationMode === "pill"
+    ? resolveEnvironmentIdentificationPillLabel(stageLabel)
+    : null;
+}
+
+/**
+ * Beside the activity rail the header band only holds the phone sheet's close button and the
+ * optional environment pill. On desktop without the pill it is empty, so the rail and panel
+ * start at the top and the toggle button floats over the rail's first row.
+ */
+export function useSidebarHeaderBand() {
+  return useSidebarPillLabel() !== null;
+}
+
+export const SidebarChromeHeader = memo(function SidebarChromeHeader({
+  isElectron,
+  collapseOnDesktop = false,
+}: {
+  isElectron: boolean;
+  collapseOnDesktop?: boolean;
+}) {
+  const pillLabel = useSidebarPillLabel();
 
   // ponytail: plain header by choice, no wordmark or stage artwork.
   return (
     <div
       className={cn(
         "relative flex h-[var(--workspace-topbar-height)] shrink-0 flex-row items-center gap-2 pr-3",
+        collapseOnDesktop && !pillLabel && "md:hidden",
         isElectron && "drag-region",
       )}
     >
@@ -173,7 +188,7 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu({
   const isOnUtilityPage = useLocation({
     select: (location) => isSidebarUtilityPage(location.pathname),
   });
-const { pullRequestsSupported, apiGatewaySupported, openPage } = useSidebarPages();
+  const { pullRequestsSupported, apiGatewaySupported, openPage } = useSidebarPages();
 
   const handleBackClick = () => {
     if (isMobile) {

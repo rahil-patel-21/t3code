@@ -86,6 +86,7 @@ interface PersistentThreadTerminalDrawerProps {
   closeShortcutLabel: string | undefined;
   keybindings: ResolvedKeybindingsConfig;
   onAddTerminalContext: (selection: TerminalContextSelection) => void;
+  onToggleTerminal: () => void;
 }
 
 export const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerminalDrawer({
@@ -98,6 +99,7 @@ export const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerm
   closeShortcutLabel,
   keybindings,
   onAddTerminalContext,
+  onToggleTerminal,
 }: PersistentThreadTerminalDrawerProps) {
   const canOperateTerminal = useEnvironmentScope(threadRef.environmentId, AuthTerminalOperateScope);
   const terminalActions = useThreadTerminalActions(threadRef);
@@ -235,15 +237,7 @@ export const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerm
   }
 
   return (
-    <div
-      className={cn(
-        "grid shrink-0 overflow-clip",
-        active ? (visible ? "grid-rows-[1fr]" : "grid-rows-[0fr]") : "hidden",
-        active &&
-          "[[data-panel-animations=true]_&]:transition-[grid-template-rows] [[data-panel-animations=true]_&]:duration-(--panel-animation-duration) [[data-panel-animations=true]_&]:ease-out",
-        active && visible && "[[data-panel-animations=true]_&]:starting:grid-rows-[0fr]!",
-      )}
-    >
+    <div className={cn("shrink-0 overflow-clip", !active && "hidden")}>
       <div className="min-h-0 overflow-clip">
         <ThreadTerminalDrawer
           threadRef={threadRef}
@@ -260,6 +254,7 @@ export const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerm
           activeTerminalGroupId={terminalUiState.activeTerminalGroupId}
           focusRequestId={focusRequestId + localFocusRequestId + (visible ? 1 : 0)}
           onNewTerminal={createNewTerminal}
+          onToggleCollapsed={onToggleTerminal}
           newShortcutLabel={visible ? newShortcutLabel : undefined}
           closeShortcutLabel={visible ? closeShortcutLabel : undefined}
           keybindings={keybindings}

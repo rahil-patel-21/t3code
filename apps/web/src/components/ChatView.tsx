@@ -1665,13 +1665,6 @@ export default function ChatView(props: ChatViewProps) {
   const rightPanelOpen = rightPanelState.isOpen;
   const { active: panelAnimationsActive, durationMs: panelAnimationDurationMs } =
     usePanelAnimationSettings();
-  const activeTerminalDrawerPresence = usePanelPresence(
-    Boolean(activeThreadKey && terminalUiState.terminalOpen),
-    true,
-    panelAnimationsActive,
-    activeThreadKey,
-    panelAnimationDurationMs,
-  );
   const rightPanelPresenceValue = {
     activeSurface: activeRightPanelSurface,
     surfaces: rightPanelState.surfaces,
@@ -1743,7 +1736,6 @@ export default function ChatView(props: ChatViewProps) {
     currentThreadIds: mountedTerminalThreadKeys,
     openThreadIds: existingOpenTerminalThreadKeys,
     activeThreadId: activeThreadKey,
-    activeThreadTerminalOpen: activeTerminalDrawerPresence.present,
     maxHiddenThreadCount: MAX_HIDDEN_MOUNTED_TERMINAL_THREADS,
   });
   if (
@@ -7724,9 +7716,6 @@ export default function ChatView(props: ChatViewProps) {
     />
   ) : null;
   const panelToggleControlProps = {
-    terminalAvailable: activeProject !== null,
-    terminalOpen: terminalUiState.terminalOpen,
-    terminalShortcutLabel: shortcutLabelForCommand(keybindings, "terminal.toggle"),
     threadPanelOpen,
     threadPanelPresentation,
     threadPanelPopoverHandle,
@@ -7734,7 +7723,6 @@ export default function ChatView(props: ChatViewProps) {
     rightPanelAvailable: activeProject !== null,
     rightPanelOpen,
     rightPanelShortcutLabel: shortcutLabelForCommand(keybindings, "rightPanel.toggle"),
-    onToggleTerminal: toggleTerminalVisibilityStable,
     onToggleThreadPanel: toggleThreadPanelStable,
     onToggleRightPanel: toggleRightPanelStable,
   } satisfies PanelLayoutControlsProps;
@@ -7749,11 +7737,7 @@ export default function ChatView(props: ChatViewProps) {
       className="absolute top-[var(--workspace-controls-top)] right-[calc(env(safe-area-inset-right)+0.75rem)] z-50 flex h-[var(--workspace-topbar-height)] items-center [-webkit-app-region:no-drag]"
       data-workspace-titlebar-controls
     >
-      <PanelLayoutControls
-        {...panelToggleControlProps}
-        showTerminalControl={false}
-        showRightPanelControl={false}
-      />
+      <PanelLayoutControls {...panelToggleControlProps} showRightPanelControl={false} />
     </div>
   );
   const panelLayoutControls = (
@@ -8468,6 +8452,7 @@ export default function ChatView(props: ChatViewProps) {
             focusRequestId={mountedThreadKey === activeThreadKey ? terminalFocusRequestId : 0}
             newShortcutLabel={newTerminalShortcutLabel ?? undefined}
             closeShortcutLabel={closeTerminalShortcutLabel ?? undefined}
+            onToggleTerminal={toggleTerminalVisibilityStable}
             keybindings={keybindings}
             onAddTerminalContext={addTerminalContextToDraft}
           />

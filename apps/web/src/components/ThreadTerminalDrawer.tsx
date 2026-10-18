@@ -1128,6 +1128,8 @@ interface ThreadTerminalDrawerProps {
   activeTerminalGroupId: string;
   focusRequestId: number;
   onNewTerminal: () => void;
+  // Drawer mode only: closed shows a slim bar rather than hiding.
+  onToggleCollapsed?: () => void;
   newShortcutLabel?: string | undefined;
   closeShortcutLabel?: string | undefined;
   onActiveTerminalChange: (terminalId: string) => void;
@@ -1390,6 +1392,7 @@ export default function ThreadTerminalDrawer({
   activeTerminalGroupId,
   focusRequestId,
   onNewTerminal,
+  onToggleCollapsed,
   newShortcutLabel,
   closeShortcutLabel,
   onActiveTerminalChange,
@@ -1426,9 +1429,6 @@ export default function ThreadTerminalDrawer({
     });
   };
   const [resizeEpoch, setResizeEpoch] = useState(0);
-  // Collapsing keeps the sessions mounted and leaves a slim header, like the VS Code panel.
-  const [collapsed, setCollapsed] = useState(false);
-  const isCollapsed = !isPanel && collapsed;
   const [shownVisible, setShownVisible] = useState(visible);
   if (shownVisible !== visible) {
     setShownVisible(visible);
@@ -1566,9 +1566,9 @@ export default function ThreadTerminalDrawer({
     resolvedTerminalGroups[resolvedActiveGroupIndex]?.splitDirection ?? "horizontal";
   const hasTerminalSidebar = normalizedTerminalIds.length > 1;
   const isSplitView = visibleTerminalIds.length > 1;
-  const showGroupHeaders =
-    resolvedTerminalGroups.length > 1 ||
-    resolvedTerminalGroups.some((terminalGroup) => terminalGroup.terminalIds.length > 1);
+  const showGroupHeaders = resolvedTerminalGroups.some(
+    (terminalGroup) => terminalGroup.terminalIds.length > 1,
+  );
   const resolveTerminalLaunchLocation = (terminalId: string): TerminalLaunchLocation =>
     terminalLaunchLocationsById?.get(terminalId) ?? {
       cwd,
@@ -1689,6 +1689,31 @@ export default function ThreadTerminalDrawer({
   const syncPreferredHeight = useEffectEvent(() => syncHeight(preferredDrawerHeight));
   useEffect(() => () => syncPreferredHeight(), []);
 
+  if (!isPanel && !visible) {
+    return (
+      <aside
+        data-thread-terminal-drawer
+        data-terminal-owner="drawer"
+        className="relative flex shrink-0 flex-col overflow-hidden border-t border-border/80 bg-background"
+        style={{ height: `${COLLAPSED_DRAWER_HEIGHT}px` }}
+      >
+        <button
+          type="button"
+          className="flex h-full w-full items-center gap-2 px-3 text-left text-xs text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
+          onClick={onToggleCollapsed}
+          aria-label="Expand Terminal"
+          aria-expanded={false}
+        >
+          <TerminalSquare className="size-3.25 shrink-0" />
+          <span className="min-w-0 flex-1 truncate">
+            {terminalLabelById.get(resolvedActiveTerminalId) ?? "Terminal"}
+          </span>
+          <ChevronUp className="size-3.5 shrink-0" />
+        </button>
+      </aside>
+    );
+  }
+
   if (normalizedTerminalIds.length === 0) {
     return (
       <aside
@@ -1735,13 +1760,9 @@ export default function ThreadTerminalDrawer({
         "relative flex min-w-0 flex-col overflow-hidden bg-background",
         isPanel ? "h-full flex-1" : "shrink-0 border-t border-border/80",
       )}
-      style={
-        isPanel
-          ? undefined
-          : { height: `${isCollapsed ? COLLAPSED_DRAWER_HEIGHT : drawerHeight}px` }
-      }
+      style={isPanel ? undefined : { height: `${drawerHeight}px` }}
     >
-      {!isPanel && !isCollapsed ? (
+      {!isPanel ? (
         <div
           className="absolute inset-x-0 top-0 z-20 h-1.5 cursor-row-resize"
           onPointerDown={handleResizePointerDown}
@@ -1752,23 +1773,7 @@ export default function ThreadTerminalDrawer({
         />
       ) : null}
 
-      {isCollapsed ? (
-        <button
-          type="button"
-          className="flex h-full w-full items-center gap-2 px-3 text-left text-xs text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
-          onClick={() => setCollapsed(false)}
-          aria-label="Expand Terminal"
-          aria-expanded={false}
-        >
-          <TerminalSquare className="size-3.25 shrink-0" />
-          <span className="min-w-0 flex-1 truncate">
-            {terminalLabelById.get(resolvedActiveTerminalId) ?? "Terminal"}
-          </span>
-          <ChevronUp className="size-3.5 shrink-0" />
-        </button>
-      ) : null}
-
-      {!hasTerminalSidebar && !isCollapsed && (
+      {!hasTerminalSidebar && (
         <div className="pointer-events-none absolute right-2 top-2 z-20">
           <div className="pointer-events-auto inline-flex items-center overflow-hidden rounded-md border border-border/80 bg-background shadow-xs">
             <TerminalActionButton
@@ -1788,12 +1793,12 @@ export default function ThreadTerminalDrawer({
             >
               <Trash2 className="size-3.25" />
             </TerminalActionButton>
-            {!isPanel ? (
+            {onToggleCollapsed ? (
               <>
                 <div className="h-4 w-px bg-border/80" />
                 <TerminalActionButton
                   className="p-1 text-foreground/90 transition-colors hover:bg-accent"
-                  onClick={() => setCollapsed(true)}
+                  onClick={onToggleCollapsed}
                   label="Collapse Terminal"
                 >
                   <ChevronDown className="size-3.25" />
@@ -1804,7 +1809,7 @@ export default function ThreadTerminalDrawer({
         </div>
       )}
 
-      <div className={cn("min-h-0 w-full flex-1", isCollapsed && "hidden")}>
+      <div className="min-h-0 w-full flex-1">
         <div
           className={cn(
             "flex h-full min-h-0 bg-(--terminal-background)",
@@ -1826,7 +1831,7 @@ export default function ThreadTerminalDrawer({
                 threadId={threadId}
                 onAddTerminalContext={onAddTerminalContext}
                 focusRequestId={focusRequestId}
-                visible={visible && !isCollapsed}
+                visible={visible}
                 resizeEpoch={resizeEpoch}
                 drawerHeight={drawerHeight}
                 keybindings={keybindings}
@@ -1851,7 +1856,7 @@ export default function ThreadTerminalDrawer({
                   onAddTerminalContext={onAddTerminalContext}
                   focusRequestId={focusRequestId}
                   autoFocus
-                  visible={visible && !isCollapsed}
+                  visible={visible}
                   resizeEpoch={resizeEpoch}
                   drawerHeight={drawerHeight}
                   keybindings={keybindings}
@@ -1880,10 +1885,10 @@ export default function ThreadTerminalDrawer({
                   >
                     <Trash2 className="size-3.25" />
                   </TerminalActionButton>
-                  {!isPanel ? (
+                  {onToggleCollapsed ? (
                     <TerminalActionButton
                       className="inline-flex h-full items-center border-l border-border/70 px-1 text-foreground/90 transition-colors hover:bg-accent/70"
-                      onClick={() => setCollapsed(true)}
+                      onClick={onToggleCollapsed}
                       label="Collapse Terminal"
                     >
                       <ChevronDown className="size-3.25" />

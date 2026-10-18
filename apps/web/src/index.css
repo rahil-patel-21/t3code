@@ -1057,6 +1057,15 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   padding-right: max(env(safe-area-inset-right), 0px);
 }
 
+/* Lets a sidebar panel start at the window top: centres its first 2rem row on the floating
+   sidebar toggle and clears the toggle horizontally. 2.75rem is the activity rail's width. */
+@utility sidebar-panel-titlebar-inset {
+  @media (min-width: 48rem) {
+    padding-top: calc((var(--workspace-topbar-height) - 2rem) / 2);
+    padding-left: max(0px, calc(var(--workspace-titlebar-content-left) - 2.75rem));
+  }
+}
+
 /* Grain texture for chrome surfaces that float above the body (see the
    --surface-grain note). Layered over the element's background-color, so it
    composes with bg-* utilities. */

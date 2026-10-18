@@ -43,7 +43,7 @@ import {
   SidebarExplorerView,
   SidebarSourceControlView,
 } from "./sidebar/SidebarActivityViews";
-import { SidebarChromeHeader } from "./sidebar/SidebarChrome";
+import { SidebarChromeHeader, useSidebarHeaderBand } from "./sidebar/SidebarChrome";
 import { MainAppLocationTracker } from "./sidebar/mainAppLocation";
 import { useProjects } from "../state/entities";
 import {
@@ -256,6 +256,7 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
   const isOnSettings = pathname === "/settings" || pathname.startsWith("/settings/");
   const isMacosDesktop = isElectron && isMacPlatform(navigator.platform);
   const [sidebarWidth, setSidebarWidth] = useState(readInitialThreadSidebarWidth);
+  const headerBand = useSidebarHeaderBand();
   const [sidebarView, setSidebarView] = useLocalStorage(
     SIDEBAR_VIEW_STORAGE_KEY,
     "threads",
@@ -346,24 +347,40 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
             <LegacyThreadSidebar />
           ) : (
             <>
-              <SidebarChromeHeader isElectron={isElectron} />
+              <SidebarChromeHeader isElectron={isElectron} collapseOnDesktop />
               <div className="flex min-h-0 flex-1">
-                <SidebarActivityBar view={sidebarView} onViewChange={setSidebarView} />
+                <SidebarActivityBar
+                  view={sidebarView}
+                  onViewChange={setSidebarView}
+                  reserveTitlebar={!headerBand}
+                  isElectron={isElectron}
+                />
                 {/* Threads stays mounted so switching views keeps its scroll and state. */}
                 <div
                   className={cn(
                     "flex min-h-0 min-w-0 flex-1 flex-col",
+                    !headerBand && "sidebar-panel-titlebar-inset",
                     sidebarView !== "threads" && "hidden",
                   )}
                 >
                   <ThreadSidebar />
                 </div>
                 {sidebarView === "explorer" ? (
-                  <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+                  <div
+                    className={cn(
+                      "flex min-h-0 min-w-0 flex-1 flex-col",
+                      !headerBand && "sidebar-panel-titlebar-inset",
+                    )}
+                  >
                     <SidebarExplorerView />
                   </div>
                 ) : sidebarView === "scm" ? (
-                  <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+                  <div
+                    className={cn(
+                      "flex min-h-0 min-w-0 flex-1 flex-col",
+                      !headerBand && "sidebar-panel-titlebar-inset",
+                    )}
+                  >
                     <SidebarSourceControlView />
                   </div>
                 ) : null}

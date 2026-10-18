@@ -519,7 +519,6 @@ describe("reconcileMountedTerminalThreadIds", () => {
         currentThreadIds: ["thread-a", "thread-b", "thread-c"],
         openThreadIds: ["thread-a", "thread-b", "thread-c"],
         activeThreadId: "thread-a",
-        activeThreadTerminalOpen: true,
         maxHiddenThreadCount: 2,
       }),
     ).toEqual(["thread-b", "thread-c", "thread-a"]);
@@ -535,7 +534,6 @@ describe("reconcileMountedTerminalThreadIds", () => {
         currentThreadIds: ids,
         openThreadIds: ids.slice(1),
         activeThreadId: null,
-        activeThreadTerminalOpen: false,
       }),
     ).toEqual(ids.slice(-MAX_HIDDEN_MOUNTED_TERMINAL_THREADS));
   });

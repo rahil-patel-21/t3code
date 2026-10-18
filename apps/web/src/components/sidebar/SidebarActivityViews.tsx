@@ -32,7 +32,7 @@ import { useGitStackedAction } from "../../state/sourceControlActions";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { vcsEnvironment } from "../../state/vcs";
 import { buildThreadRouteParams, resolveThreadRouteTarget } from "../../threadRoutes";
-import { isMacPlatform, randomUUID } from "~/lib/utils";
+import { cn, isMacPlatform, randomUUID } from "~/lib/utils";
 import { resolveSidebarThreadStatus } from "../Sidebar.logic";
 import { DiffStatLabel } from "../chat/DiffStatLabel";
 import FileBrowserPanel from "../files/FileBrowserPanel";
@@ -164,6 +164,9 @@ function ActivityRailItem(props: {
 export function SidebarActivityBar(props: {
   view: SidebarView;
   onViewChange: (view: SidebarView) => void;
+  /** Reserves the titlebar row, where the sidebar toggle floats, above the first icon. */
+  reserveTitlebar: boolean;
+  isElectron: boolean;
 }) {
   const workspace = useActiveThreadWorkspace();
   const changeCount = useWorkspaceGitStatus(workspace).data?.workingTree.files.length ?? 0;
@@ -179,8 +182,19 @@ export function SidebarActivityBar(props: {
   return (
     <nav
       aria-label="Sidebar views"
-      className="flex w-11 shrink-0 flex-col items-center border-e border-sidebar-border py-1"
+      className="flex w-11 shrink-0 flex-col items-center border-e border-sidebar-border pb-1 max-md:pt-1"
     >
+      {props.reserveTitlebar ? (
+        <div
+          aria-hidden="true"
+          className={cn(
+            "hidden h-[var(--workspace-topbar-height)] w-full shrink-0 md:block",
+            props.isElectron && "drag-region",
+          )}
+        />
+      ) : (
+        <div aria-hidden="true" className="hidden h-1 shrink-0 md:block" />
+      )}
       <SidebarMenu className="items-center">
         {ACTIVITY_VIEWS.map(({ id, label, icon }) => (
           <ActivityRailItem

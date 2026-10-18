@@ -657,7 +657,6 @@ export function reconcileMountedTerminalThreadIds(input: {
   currentThreadIds: ReadonlyArray<string>;
   openThreadIds: ReadonlyArray<string>;
   activeThreadId: string | null;
-  activeThreadTerminalOpen: boolean;
   maxHiddenThreadCount?: number;
 }): string[] {
   const openThreadIdSet = new Set(input.openThreadIds);
@@ -673,11 +672,8 @@ export function reconcileMountedTerminalThreadIds(input: {
       ? hiddenThreadIds.slice(-maxHiddenThreadCount)
       : hiddenThreadIds;
 
-  if (
-    input.activeThreadId &&
-    input.activeThreadTerminalOpen &&
-    !nextThreadIds.includes(input.activeThreadId)
-  ) {
+  // The active thread always mounts its drawer, which shows a collapsed bar while closed.
+  if (input.activeThreadId && !nextThreadIds.includes(input.activeThreadId)) {
     nextThreadIds.push(input.activeThreadId);
   }
 
