@@ -60,13 +60,17 @@ the composer and edit it. Stop returns every queued message to the composer.
 Choose **Settings → General → Follow-up behavior** to **Queue** new messages for a
 later turn or **Steer** the running turn immediately. The setting applies to this
 client; messages already queued keep their place. Queued messages are saved on the
-server and can be edited, reordered, or removed above the composer. `Cmd+Enter` on
-macOS or `Ctrl+Enter` on Windows and Linux uses the opposite action: it steers when
-your default is Queue and queues when your default is Steer.
+server and can be edited, reordered, or removed above the composer. When Enter
+sends, `Cmd+Enter` on macOS or `Ctrl+Enter` on Windows and Linux uses the opposite
+action: it steers when your default is Queue and queues when your default is Steer.
+If your **Send shortcut** requires `Cmd+Enter` or `Ctrl+Enter`, that shortcut uses
+your default follow-up behavior; add **Shift** to use the opposite action. This
+applies only to multiline messages when you choose the multiline send option.
 
 Use `Cmd+Shift+Enter` on macOS or `Ctrl+Shift+Enter` on Windows and Linux to send
 the oldest queued message as a steer. This leaves the current draft intact and
-requires an active turn that supports steering. Change
+requires an active turn that supports steering. If that shortcut sends the opposite
+action for your draft, move focus outside the composer to steer the queued message. Change
 `thread.steerQueuedMessage` in **Settings → Keybindings** to use another shortcut.
 
 Press `Option+Up` on macOS or `Alt+Up` on Windows and Linux with the cursor at the

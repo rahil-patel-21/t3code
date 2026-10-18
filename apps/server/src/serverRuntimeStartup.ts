@@ -284,22 +284,38 @@ const resolveAutoBootstrapWelcomeTargets = Effect.gen(function* () {
     if (existingThread === undefined) {
       const serverSettings = yield* ServerSettings.ServerSettingsService;
       const settings = yield* serverSettings.getSettings;
-      const launched = yield* threadLaunch.launch({
-        commandId: CommandId.make(yield* randomUUID),
-        projectId: project.id,
-        title: "New thread",
-        modelSelection:
-          resolveProjectSettings(settings, project.id, project).settings.defaultModelSelection ??
-          threadModelSelection,
-        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
-        runtimeMode: resolveProjectSettings(settings, project.id, project).settings
-          .defaultRuntimeMode,
-        workspaceStrategy: { type: "root" },
-        createdBy: "system",
-        creationSource: "server",
-      });
+      const launched = yield* threadLaunch
+        .launch({
+          commandId: CommandId.make(yield* randomUUID),
+          projectId: project.id,
+          title: "New thread",
+          modelSelection:
+            resolveProjectSettings(settings, project.id, project).settings.defaultModelSelection ??
+            threadModelSelection,
+          interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+          runtimeMode: resolveProjectSettings(settings, project.id, project).settings
+            .defaultRuntimeMode,
+          workspaceStrategy: { type: "root" },
+          createdBy: "system",
+          creationSource: "server",
+        })
+        .pipe(
+          // The bootstrap thread is optional; its launch must not prevent opening the app.
+          Effect.catchTags({
+            ThreadManagementProviderInstanceDisabledError: (error) =>
+              Effect.logInfo("Skipped bootstrap thread because its provider instance is disabled", {
+                projectId: project.id,
+                instanceId: error.instanceId,
+              }).pipe(Effect.as(undefined)),
+            ThreadLaunchError: (error) =>
+              Effect.logWarning("Failed to launch bootstrap thread", {
+                projectId: project.id,
+                operation: error.operation,
+              }).pipe(Effect.as(undefined)),
+          }),
+        );
       bootstrapProjectId = project.id;
-      bootstrapThreadId = launched.threadId;
+      bootstrapThreadId = launched?.threadId;
     } else {
       bootstrapProjectId = project.id;
       bootstrapThreadId = existingThread.id;
@@ -332,9 +348,7 @@ const resolveStartupBrowserTarget = Effect.gen(function* () {
  * records also land in the trace file and any configured OTLP collector.
  */
 export const announceStartupPairingUrl = (pairingUrl: string) =>
-  Effect.logInfo(
-    `Authentication required. Open ${APP_BASE_NAME} using the pairing URL.`,
-  ).pipe(
+  Effect.logInfo(`Authentication required. Open ${APP_BASE_NAME} using the pairing URL.`).pipe(
     // Indented to match the annotation line the pretty logger printed before.
     Effect.andThen(Console.log(`  pairingUrl: ${pairingUrl}`)),
   );
