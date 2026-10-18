@@ -1058,10 +1058,15 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
 }
 
 /* Lets a sidebar panel start at the window top: centres its first 2rem row on the floating
-   sidebar toggle and clears the toggle horizontally. 2.75rem is the activity rail's width. */
+   sidebar toggle and clears the toggle horizontally. The panel's own group padding
+   (--sidebar-content-inset) already sits above that row, so it is taken off the centring offset.
+   2.75rem is the activity rail's width. */
 @utility sidebar-panel-titlebar-inset {
   @media (min-width: 48rem) {
-    padding-top: calc((var(--workspace-topbar-height) - 2rem) / 2);
+    padding-top: max(
+      0px,
+      calc((var(--workspace-topbar-height) - 2rem) / 2 - var(--sidebar-content-inset))
+    );
     padding-left: max(0px, calc(var(--workspace-titlebar-content-left) - 2.75rem));
   }
 }

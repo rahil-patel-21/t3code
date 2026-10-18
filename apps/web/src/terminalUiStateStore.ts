@@ -47,6 +47,18 @@ export function migratePersistedTerminalUiStateStoreState(
   return { terminalUiStateByThreadKey };
 }
 
+/** Every thread starts the app with its terminal collapsed to the bar, whatever it was left at. */
+export function closePersistedTerminalDrawers<T extends { terminalOpen: boolean }>(
+  terminalUiStateByThreadKey: Record<string, T>,
+): Record<string, T> {
+  return Object.fromEntries(
+    Object.entries(terminalUiStateByThreadKey).map(([threadKey, state]) => [
+      threadKey,
+      state.terminalOpen ? { ...state, terminalOpen: false } : state,
+    ]),
+  );
+}
+
 function createTerminalUiStateStorage() {
   return resolveStorage(typeof window !== "undefined" ? window.localStorage : undefined);
 }
@@ -863,6 +875,16 @@ export const useTerminalUiStateStore = create<TerminalUiStateStoreState>()(
       version: 4,
       storage: createJSONStorage(createTerminalUiStateStorage),
       migrate: migratePersistedTerminalUiStateStoreState,
+      merge: (persistedState, currentState) => {
+        const persisted = (persistedState ?? {}) as PersistedTerminalUiStateStoreState;
+        return {
+          ...currentState,
+          ...persisted,
+          terminalUiStateByThreadKey: closePersistedTerminalDrawers(
+            persisted.terminalUiStateByThreadKey ?? currentState.terminalUiStateByThreadKey,
+          ),
+        };
+      },
       partialize: (state) => ({
         terminalUiStateByThreadKey: state.terminalUiStateByThreadKey,
         terminalNamesByThreadKey: state.terminalNamesByThreadKey,

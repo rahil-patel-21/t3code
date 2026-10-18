@@ -3,6 +3,7 @@ import { ThreadId } from "@t3tools/contracts";
 import { beforeEach, describe, expect, it } from "vite-plus/test";
 
 import {
+  closePersistedTerminalDrawers,
   migratePersistedTerminalUiStateStoreState,
   selectThreadTerminalUiState,
   useTerminalUiStateStore,
@@ -352,5 +353,23 @@ describe("terminal names", () => {
 
     store.clearTerminalUiState(THREAD_REF);
     expect(names()).toBeUndefined();
+  });
+
+  it("restores every persisted terminal collapsed but keeps its sessions", () => {
+    const open = {
+      terminalOpen: true,
+      terminalHeight: 320,
+      terminalIds: ["term-1"],
+      activeTerminalId: "term-1",
+      terminalGroups: [{ id: "group-term-1", terminalIds: ["term-1"] }],
+      activeTerminalGroupId: "group-term-1",
+    };
+    const restored = closePersistedTerminalDrawers({
+      a: open,
+      b: { ...open, terminalOpen: false },
+    });
+
+    expect(restored.a).toEqual({ ...open, terminalOpen: false });
+    expect(restored.b).toEqual({ ...open, terminalOpen: false });
   });
 });
