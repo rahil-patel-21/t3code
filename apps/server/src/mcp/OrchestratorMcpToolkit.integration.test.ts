@@ -1864,6 +1864,16 @@ describe("orchestrator MCP toolkit", () => {
                 legacyDelegatedRun,
               ),
             ).toBe(false);
+            const heldFollowupCall = yield* invoke("t3_thread_send", {
+              threadId: delegated.childThreadId,
+              message: "This queued follow-up must remain stopped until resumed.",
+              mode: "queue",
+              clientRequestId: "delegated-child-held-followup",
+            });
+            const heldFollowup = yield* decodeThreadSendResult(
+              heldFollowupCall.structuredContent,
+            ).pipe(Effect.orDie);
+            expect(heldFollowup.taskId).toBeDefined();
             const completedTaskCancelCall = yield* invoke("task_cancel", {
               taskId: delegated.taskId,
               reason: "Stop the child's later work too.",
@@ -1903,6 +1913,35 @@ describe("orchestrator MCP toolkit", () => {
               latestTerminalRunId: activeChildFollowup.runId,
               latestTerminalStatus: "interrupted",
             });
+
+            yield* waitForProjection(orchestrator, parentThreadId, (projection) =>
+              projection.subagents.some(
+                (task) => task.id === heldFollowup.taskId && task.status === "idle",
+              ),
+            );
+            expect(
+              (yield* orchestrator.getThreadProjection(delegated.childThreadId)).runs.find(
+                (run) => run.id === heldFollowup.runId,
+              ),
+            ).toMatchObject({ status: "queued", queueHeld: true, startedAt: null });
+            const cancelHeldCall = yield* invoke("task_cancel", {
+              taskId: heldFollowup.taskId,
+              clientRequestId: "cancel-held-delegated-followup",
+            });
+            expect(
+              (yield* decodeTaskCancelResult(cancelHeldCall.structuredContent).pipe(Effect.orDie))
+                .status,
+            ).toBe("cancel_requested");
+            yield* waitForProjection(orchestrator, parentThreadId, (projection) =>
+              projection.subagents.some(
+                (task) => task.id === heldFollowup.taskId && task.status === "cancelled",
+              ),
+            );
+            expect(
+              (yield* orchestrator.getThreadProjection(delegated.childThreadId)).runs.find(
+                (run) => run.id === heldFollowup.runId,
+              ),
+            ).toMatchObject({ status: "cancelled", startedAt: null });
 
             expect(childFollowup.taskId).toBeDefined();
             expect(activeChildFollowup.taskId).toBeDefined();
@@ -2387,6 +2426,58 @@ describe("orchestrator MCP toolkit", () => {
               Effect.orDie,
             );
             expect(unlinked.linkedPullRequest).toBeNull();
+
+            // Links added through thread.pull-request.link leave linkedPullRequest unchanged.
+            yield* orchestrator.dispatch({
+              type: "thread.pull-request.link",
+              commandId: CommandId.make("command:mcp-empty:link-other-repository"),
+              threadId: emptyThread.threadId,
+              host: "github.com",
+              repository: "octo/other-repo",
+              number: 42,
+              url: "https://github.com/octo/other-repo/pull/42",
+              source: "agent",
+            });
+            yield* orchestrator.dispatch({
+              type: "thread.pull-request.link",
+              commandId: CommandId.make("command:mcp-empty:link-dismissed"),
+              threadId: emptyThread.threadId,
+              host: "github.com",
+              repository: "octo/other-repo",
+              number: 43,
+              url: "https://github.com/octo/other-repo/pull/43",
+              source: "stack-dismissed",
+            });
+            const otherRepositoryLink = {
+              host: "github.com",
+              repository: "octo/other-repo",
+              number: 42,
+              url: "https://github.com/octo/other-repo/pull/42",
+              source: "agent",
+              state: null,
+            };
+            const otherRepositoryReadCall = yield* invoke("t3_thread_read", {
+              threadId: emptyThread.threadId,
+            });
+            const otherRepositoryRead = yield* decodeThreadReadResult(
+              otherRepositoryReadCall.structuredContent,
+            ).pipe(Effect.orDie);
+            expect(otherRepositoryRead.thread).toMatchObject({
+              linkedPullRequest: null,
+              pullRequests: [otherRepositoryLink],
+            });
+            const otherRepositoryListCall = yield* invoke("t3_thread_list", { limit: 100 });
+            const otherRepositoryList = yield* decodeThreadListResult(
+              otherRepositoryListCall.structuredContent,
+            ).pipe(Effect.orDie);
+            expect(
+              otherRepositoryList.threads.find(
+                (thread) => thread.threadId === emptyThread.threadId,
+              ),
+            ).toMatchObject({ linkedPullRequest: null, pullRequests: [otherRepositoryLink] });
+            expect(
+              otherRepositoryList.threads.find((thread) => thread.threadId === parentThreadId),
+            ).toMatchObject({ pullRequests: [] });
 
             const regenerateCall = yield* invoke("t3_thread_update", {
               threadId: emptyThread.threadId,

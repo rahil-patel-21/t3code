@@ -161,7 +161,12 @@ import {
   type ComposerBannerStackContent,
   type ComposerBannerStackItem,
 } from "./ComposerBannerStack";
-import { compressImageForStash, prepareImageForAttachment } from "../../lib/imageCompression";
+import {
+  compressImageForStash,
+  isHeicImageFile,
+  prepareImageForAttachment,
+} from "../../lib/imageCompression";
+import { AttachmentImage } from "../media/AttachmentImage";
 import {
   fileAttachmentTooLargeMessage,
   formatAttachmentSize,
@@ -4860,12 +4865,22 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 alt=""
                 className="size-full object-cover"
                 fallback={
-                  <PierreEntryIcon
-                    pathValue={image.name}
-                    kind="file"
-                    theme={resolvedTheme}
-                    className="m-auto size-3.5"
-                  />
+                  isHeicImageFile({ name: image.name, type: image.mimeType }) ? (
+                    <AttachmentImage
+                      name={image.name}
+                      mimeType={image.mimeType}
+                      src={image.previewUrl}
+                      alt=""
+                      className="size-full object-cover"
+                    />
+                  ) : (
+                    <PierreEntryIcon
+                      pathValue={image.name}
+                      kind="file"
+                      theme={resolvedTheme}
+                      className="m-auto size-3.5"
+                    />
+                  )
                 }
               />
             ) : (
@@ -5788,11 +5803,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     },
   });
 
-  // Stable callbacks, not useEffectEvent: ChatComposer is memoized, and React
-  // 19.2 never refreshes an effect event's impl on memo fibers — stale closures
-  // here would import the dropped thread into the first mounted thread's draft.
-  const attachDroppedThreadFile = useStableCallback((file: File) => addComposerAttachments([file]));
-  const importDroppedThread = useStableCallback(
+  const attachDroppedThreadFile = useEffectEvent((file: File) => addComposerAttachments([file]));
+  const importDroppedThread = useEffectEvent(
     async (ref: ScopedThreadRef, isActive: () => boolean) => {
       const targetKey = attachmentTargetKey;
       pendingDraftWork.begin(targetKey);
@@ -6729,9 +6741,19 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                                   alt={image.name}
                                   className="h-full w-full object-cover"
                                   fallback={
-                                    <span className="flex h-full items-center justify-center px-1 text-3xs text-secondary-label">
-                                      {image.name}
-                                    </span>
+                                    isHeicImageFile({ name: image.name, type: image.mimeType }) ? (
+                                      <AttachmentImage
+                                        name={image.name}
+                                        mimeType={image.mimeType}
+                                        src={image.previewUrl}
+                                        alt={image.name}
+                                        className="h-full w-full object-cover"
+                                      />
+                                    ) : (
+                                      <span className="flex h-full items-center justify-center px-1 text-3xs text-secondary-label">
+                                        {image.name}
+                                      </span>
+                                    )
                                   }
                                 />
                               </button>
