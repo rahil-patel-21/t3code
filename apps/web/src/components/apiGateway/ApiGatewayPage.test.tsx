@@ -30,7 +30,7 @@ const testState = vi.hoisted(() => ({
 }));
 
 vi.mock("../../env", () => ({ isElectron: false }));
-vi.mock("../../hooks/useMediaQuery", () => ({ useIsMobile: () => testState.isMobile }));
+vi.mock("../../hooks/useMediaQuery", () => ({ useMediaQuery: () => testState.isMobile }));
 vi.mock("../../localApi", () => ({
   ensureLocalApi: () => ({
     dialogs: { confirm: testState.confirm },

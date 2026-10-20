@@ -524,6 +524,7 @@ export class RelayEnvironmentLinkUnavailableError extends Schema.TaggedError<Rel
   {
     code: Schema.Literal("environment_link_unavailable"),
     reason: RelayEnvironmentLinkUnavailableReason,
+    provisioningStage: Schema.optionalKey(TrimmedNonEmptyString),
     traceId: TrimmedNonEmptyString,
   },
   { httpApiStatus: 503 },

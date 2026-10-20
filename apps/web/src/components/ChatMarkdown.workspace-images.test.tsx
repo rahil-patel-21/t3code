@@ -72,6 +72,7 @@ function renderFilePreview(cwd: string, relativePath: string): string {
       cwd={cwd}
       relativePath={relativePath}
       text="![diagram](images/diagram.png)"
+      workspaceMutationId={null}
       threadRef={threadRef}
     />,
   );

@@ -14,6 +14,7 @@ import * as DateTime from "effect/DateTime";
 import * as Cause from "effect/Cause";
 
 import * as IdAllocator from "./IdAllocator.ts";
+import type { ProviderAdapterFailureReason } from "./ProviderAdapter.ts";
 import * as Schema from "effect/Schema";
 
 export class ContextHandoffBudgetError extends Schema.TaggedError<ContextHandoffBudgetError>()(
@@ -30,12 +31,50 @@ export const MAX_PROVIDER_FAILURE_CODE_LENGTH = 128;
 
 const DEFAULT_PROVIDER_FAILURE_MESSAGE = "Provider turn failed.";
 
-function causeMessage(cause: unknown): string | undefined {
+const PROVIDER_FAILURE_CATEGORIES: Partial<
+  Record<string, { readonly summary: string; readonly guidance: string }>
+> = {
+  ProviderAdapterTurnStartError: {
+    summary: "The provider could not start this turn",
+    guidance: "Retry the turn; if it keeps failing, check the provider setup and server logs.",
+  },
+  ProviderAdapterEventStreamError: {
+    summary: "The provider event stream closed unexpectedly",
+    guidance: "Retry the turn; if it keeps failing, check the provider and server logs.",
+  },
+  ProviderAdapterOpenSessionError: {
+    summary: "The provider session could not be opened",
+    guidance: "Check that the provider is installed and signed in, then retry the turn.",
+  },
+  ProviderAdapterResumeThreadError: {
+    summary: "The provider conversation could not be resumed",
+    guidance: "Retry the turn; if it keeps failing, check the provider and server logs.",
+  },
+};
+
+const PROVIDER_FAILURE_REASONS: Record<ProviderAdapterFailureReason, string> = {
+  previous_turn_active: "the previous turn is still running",
+  attachment_unreadable: "an attachment could not be read",
+};
+
+/**
+ * Walks a cause chain for curated text without reading arbitrary provider
+ * defect text. `known` is the message of a domain error T3 raised itself;
+ * `category` is the generic message of the innermost provider wrapper seen.
+ */
+function curatedCauseMessages(cause: unknown): {
+  readonly known: string | undefined;
+  readonly category: string | undefined;
+} {
   const seen = new Set<unknown>();
-  let message: string | undefined;
-  // Held back until the walk finishes, so a nested error that states a concrete
-  // reason wins over the generic advice to retry.
-  let generic: string | undefined;
+  let category: (typeof PROVIDER_FAILURE_CATEGORIES)[string];
+  let reason: string | undefined;
+  const categoryMessage = () => {
+    if (category === undefined) return undefined;
+    return reason
+      ? `${category.summary}: ${reason}. ${category.guidance}`
+      : `${category.summary}. ${category.guidance}`;
+  };
   for (let depth = 0; depth < 16 && cause != null && !seen.has(cause); depth++) {
     seen.add(cause);
     try {
@@ -44,50 +83,59 @@ function causeMessage(cause: unknown): string | undefined {
         continue;
       }
       if (typeof cause !== "object") break;
-      switch ((cause as Record<string, unknown>)._tag) {
+      const tag = (cause as Record<string, unknown>)._tag;
+      switch (tag) {
         case "ContextHandoffBudgetError":
-          return new ContextHandoffBudgetError().message;
-        case "ClaudeBackgroundWorkBlocksQueryReplacementError":
-        case "CursorModelUnavailableError":
-          return stringField(cause, "message");
-        case "ContextHandoffDeliveryUncertainError":
-          return "T3 could not confirm whether conversation history reached the provider. Retry the turn to recover the session.";
+          return { known: new ContextHandoffBudgetError().message, category: categoryMessage() };
+        // ProviderCommandUnsupportedError is deterministic: the provider cannot do
+        // this, so retrying never helps.
         case "ProviderCommandUnsupportedError":
-          // Deterministic: the provider cannot do this, so retrying never helps.
-          message ??= stringField(cause, "message");
+        case "AcpModelSelectionError":
+        case "ClaudeBackgroundWorkBlocksQueryReplacementError":
+        case "ClaudeAppendSystemPromptFileError":
+        case "ClaudeAppendSystemPromptMissingValueError":
+        case "CursorModelUnavailableError":
+          return { known: stringField(cause, "message"), category: categoryMessage() };
+        case "ContextHandoffDeliveryUncertainError":
+          return {
+            known:
+              "T3 could not confirm whether conversation history reached the provider. Retry the turn to recover the session.",
+            category: categoryMessage(),
+          };
+        case "ProviderAdapterProtocolError": {
+          const typedReason = (cause as Record<string, unknown>).reason;
+          if (
+            category !== undefined &&
+            typeof typedReason === "string" &&
+            Object.hasOwn(PROVIDER_FAILURE_REASONS, typedReason)
+          ) {
+            reason ??= PROVIDER_FAILURE_REASONS[typedReason as ProviderAdapterFailureReason];
+          }
           break;
-        case "ProviderAdapterProtocolError":
-          // `detail` is T3's own wording for a condition it recognized, not
-          // text the provider supplied, so it is safe and far more useful than
-          // the generic retry advice: it names what was rejected and why.
-          message ??= stringField(cause, "detail");
-          break;
-        case "ProviderAdapterTurnStartError":
-          generic ??=
-            "The provider could not start this turn. Retry the turn; if it keeps failing, check the provider setup and server logs.";
-          break;
-        case "ProviderAdapterEventStreamError":
-          message ??=
-            "The provider event stream closed unexpectedly. Retry the turn; if it keeps failing, check the provider and server logs.";
-          break;
-        case "ProviderAdapterOpenSessionError":
-          message ??=
-            "The provider session could not be opened. Check that the provider is installed and signed in, then retry the turn.";
-          break;
-        case "ProviderAdapterResumeThreadError":
-          message ??=
-            "The provider conversation could not be resumed. Retry the turn; if it keeps failing, check the provider and server logs.";
-          break;
+        }
+      }
+      if (typeof tag === "string" && Object.hasOwn(PROVIDER_FAILURE_CATEGORIES, tag)) {
+        category = PROVIDER_FAILURE_CATEGORIES[tag];
+        reason = undefined;
       }
       cause = (cause as Record<string, unknown>).cause;
     } catch {
       break;
     }
   }
-  return message ?? generic;
+  return { known: undefined, category: categoryMessage() };
 }
 
-function stringField(value: unknown, key: "message" | "code" | "detail"): string | undefined {
+/**
+ * The curated message of a domain error in a failure's cause chain, if any.
+ * Callers that pass their own `message` to `makeProviderFailure` check it
+ * first, so a known reason is not hidden behind a wrapper's text.
+ */
+export function knownProviderFailureMessage(cause: unknown): string | undefined {
+  return curatedCauseMessages(cause).known;
+}
+
+function stringField(value: unknown, key: "message" | "code"): string | undefined {
   if (typeof value !== "object" || value === null) return undefined;
   try {
     const candidate = (value as Record<string, unknown>)[key];
@@ -237,7 +285,9 @@ export function makeProviderFailure(input: {
   readonly retryable?: boolean | null;
   readonly resetAt?: string | null;
 }): OrchestrationV2ProviderFailure {
-  const rawMessage = input.message ?? causeMessage(input.cause) ?? DEFAULT_PROVIDER_FAILURE_MESSAGE;
+  const curated = curatedCauseMessages(input.cause);
+  const rawMessage =
+    input.message ?? curated.known ?? curated.category ?? DEFAULT_PROVIDER_FAILURE_MESSAGE;
   const message = boundedText(rawMessage, MAX_PROVIDER_FAILURE_MESSAGE_LENGTH);
   const rawCode = input.code ?? stringField(input.cause, "code") ?? null;
   const code =

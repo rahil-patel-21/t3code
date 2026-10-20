@@ -34,7 +34,7 @@ import {
 import { APP_BASE_NAME } from "~/branding";
 import { isElectron } from "~/env";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
-import { useIsMobile } from "~/hooks/useMediaQuery";
+import { useMediaQuery } from "~/hooks/useMediaQuery";
 import { cn, randomUUID } from "~/lib/utils";
 import { ensureLocalApi } from "~/localApi";
 import { apiGatewayEnvironment } from "~/state/apiGateway";
@@ -151,7 +151,7 @@ function ApiGatewayWorkspaceView(props: {
   );
   const apply = useAtomCommand(apiGatewayEnvironment.apply, { reportFailure: false });
   const execute = useAtomCommand(apiGatewayEnvironment.execute, { reportFailure: false });
-  const isMobile = useIsMobile();
+  const isMobile = useMediaQuery("max-md");
   const [panelOpen, setPanelOpen] = useState(!isMobile);
   const [dialog, setDialog] = useState<DialogState | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
